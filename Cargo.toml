@@ -1,0 +1,21 @@
+[package]
+name = "costree"
+version = "0.1.0"
+edition = "2021"
+description = "A graphical disk usage analyzer for the COSMIC desktop"
+license = "MIT"
+repository = "https://github.com/Jonesie/costree"
+keywords = ["disk-usage", "cosmic", "gui"]
+categories = ["filesystem", "gui"]
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic.git"
+features = [
+    "wgpu",
+    "tokio",
+    "single-instance",
+    "xdg-portal",
+]

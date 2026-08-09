@@ -1,0 +1,190 @@
+// SPDX-License-Identifier: MIT
+
+mod subscription;
+mod tasks;
+mod update;
+mod view;
+
+use std::collections::HashSet;
+use std::path::PathBuf;
+
+use cosmic::iced::Subscription;
+use cosmic::prelude::*;
+
+use crate::scanner::{self, Entry};
+
+const APP_TITLE: &str = "CosTree";
+
+pub struct AppModel {
+    core: cosmic::Core,
+    scan_root: PathBuf,
+    root: Option<Entry>,
+    expanded: HashSet<PathBuf>,
+    selected: Option<PathBuf>,
+    /// Path awaiting user confirmation in the delete dialog.
+    confirm_delete: Option<PathBuf>,
+    last_error: Option<String>,
+    /// True while the initial (fast, single-level) directory listing is in flight.
+    listing: bool,
+    /// Number of top-level directories whose recursive scan hasn't completed yet.
+    pending_branches: usize,
+    total_branches: usize,
+    hide_dotfiles: bool,
+    search_query: String,
+    /// Text currently in the root-path field (may not match `scan_root` while being edited).
+    root_input: String,
+    /// Home, filesystem root, and other detected mounted volumes, for the quick-pick dropdown.
+    quick_roots: Vec<(String, PathBuf)>,
+    /// Current scan generation; bumped on every rescan or cancel so in-flight
+    /// background scans can tell they've been superseded.
+    generation: u64,
+    /// Path and in-progress new name for the rename dialog.
+    rename_target: Option<(PathBuf, String)>,
+    /// Handle to the on-disk config, used to persist settings like
+    /// `hide_dotfiles` between runs. `None` if it couldn't be opened.
+    config_handle: Option<cosmic::cosmic_config::Config>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    TopLevelListed(Entry),
+    BranchScanned(PathBuf, Option<Entry>),
+    ToggleExpand(PathBuf),
+    Select(PathBuf),
+    Rescan,
+    CancelScan,
+    DeleteRequested,
+    DeleteContextRequested(PathBuf),
+    DeleteConfirmed,
+    DeleteCancelled,
+    DeleteCompleted(PathBuf, Result<(), String>),
+    Tick,
+    HideDotfilesToggled(bool),
+    SearchChanged(String),
+    RootInputChanged(String),
+    RootSubmitted,
+    QuickRootSelected(usize),
+    OpenInFiles(PathBuf),
+    RenameRequested(PathBuf),
+    RenameInputChanged(String),
+    RenameConfirmed,
+    RenameCancelled,
+    RenameCompleted(PathBuf, PathBuf, Result<(), String>),
+    /// Plumbing required for context menus to open as native popups
+    /// (correctly positioned at the cursor) instead of a slow in-window
+    /// overlay fallback.
+    Surface(cosmic::surface::Action),
+}
+
+impl AppModel {
+    /// Resets scan-related state and kicks off a fresh top-level listing of `root`.
+    fn begin_scan(&mut self, root: PathBuf) -> Task<cosmic::Action<Message>> {
+        self.generation = scanner::next_generation();
+        self.scan_root = root.clone();
+        self.root_input = root.to_string_lossy().into_owned();
+        self.expanded.clear();
+        self.expanded.insert(root.clone());
+        self.listing = true;
+        self.pending_branches = 0;
+        self.total_branches = 0;
+        self.root = None;
+        self.selected = None;
+        self.confirm_delete = None;
+        self.rename_target = None;
+        self.last_error = None;
+        tasks::spawn_top_level_listing(root)
+    }
+
+    /// Cancels any scan in flight; already-scanned branches keep their data.
+    fn cancel_scan(&mut self) {
+        scanner::next_generation();
+        scanner::clear_current_scan_path();
+        self.pending_branches = 0;
+    }
+}
+
+impl cosmic::Application for AppModel {
+    type Executor = cosmic::executor::Default;
+    type Flags = ();
+    type Message = Message;
+
+    const APP_ID: &'static str = "net.jonesie.Costree";
+
+    fn core(&self) -> &cosmic::Core {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut cosmic::Core {
+        &mut self.core
+    }
+
+    fn init(core: cosmic::Core, _flags: Self::Flags) -> (Self, Task<cosmic::Action<Self::Message>>) {
+        let scan_root = std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/"));
+
+        use cosmic::cosmic_config::CosmicConfigEntry;
+
+        let config_handle =
+            cosmic::cosmic_config::Config::new(Self::APP_ID, crate::config::Config::VERSION).ok();
+        let hide_dotfiles = config_handle
+            .as_ref()
+            .map(|handle| {
+                crate::config::Config::get_entry(handle)
+                    .unwrap_or_else(|(_errors, config)| config)
+                    .hide_dotfiles
+            })
+            .unwrap_or(false);
+
+        let mut app = AppModel {
+            core,
+            scan_root: scan_root.clone(),
+            root: None,
+            expanded: HashSet::new(),
+            selected: None,
+            confirm_delete: None,
+            last_error: None,
+            listing: true,
+            pending_branches: 0,
+            total_branches: 0,
+            hide_dotfiles,
+            search_query: String::new(),
+            root_input: scan_root.to_string_lossy().into_owned(),
+            quick_roots: scanner::detect_roots(&scan_root),
+            generation: 0,
+            rename_target: None,
+            config_handle,
+        };
+
+        app.core_mut().set_header_title(APP_TITLE.to_string());
+
+        let title_task = match app.core().main_window_id() {
+            Some(id) => app.set_window_title(APP_TITLE.to_string(), id),
+            None => Task::none(),
+        };
+
+        let scan_task = app.begin_scan(scan_root);
+
+        (app, Task::batch([title_task, scan_task]))
+    }
+
+    fn view(&self) -> Element<'_, Self::Message> {
+        view::view(self)
+    }
+
+    fn footer(&self) -> Option<Element<'_, Self::Message>> {
+        view::footer(self)
+    }
+
+    fn dialog(&self) -> Option<Element<'_, Self::Message>> {
+        view::dialog(self)
+    }
+
+    fn subscription(&self) -> Subscription<Self::Message> {
+        subscription::subscription(self)
+    }
+
+    fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
+        update::update(self, message)
+    }
+}
