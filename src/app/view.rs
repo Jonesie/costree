@@ -73,15 +73,21 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
         ))
         .push(title_content)
         .push(widget::Space::new().width(Length::Fill))
-        .push(
-            toolbar_button("process-stop-symbolic", "Cancel")
-                .on_press_maybe(scanning.then_some(Message::CancelScan)),
-        )
-        .push(toolbar_button("view-refresh-symbolic", "Refresh (F5)").on_press(Message::Rescan))
-        .push(
-            toolbar_button("user-trash-symbolic", "Delete (Del)")
-                .on_press_maybe(can_delete.then_some(Message::DeleteRequested)),
-        )
+        .push(toolbar_button(
+            "process-stop-symbolic",
+            "Cancel",
+            scanning.then_some(Message::CancelScan),
+        ))
+        .push(toolbar_button(
+            "view-refresh-symbolic",
+            "Refresh (F5)",
+            Some(Message::Rescan),
+        ))
+        .push(toolbar_button(
+            "user-trash-symbolic",
+            "Delete (Del)",
+            can_delete.then_some(Message::DeleteRequested),
+        ))
         .align_y(Alignment::Center)
         .spacing(spacing.space_s);
 
@@ -257,14 +263,14 @@ pub(super) fn dialog(app: &AppModel) -> Option<Element<'_, Message>> {
     None
 }
 
-fn toolbar_button<'a>(icon_name: &'static str, label: &'a str) -> widget::button::Button<'a, Message> {
-    widget::button::custom(
-        widget::row::with_capacity(2)
-            .push(widget::icon::from_name(icon_name))
-            .push(widget::text::body(label))
-            .spacing(6)
-            .align_y(Alignment::Center),
-    )
+fn toolbar_button<'a>(
+    icon_name: &'static str,
+    tooltip_text: &'a str,
+    on_press: Option<Message>,
+) -> Element<'a, Message> {
+    let button = widget::button::icon(widget::icon::from_name(icon_name)).on_press_maybe(on_press);
+    widget::tooltip::tooltip(button, widget::text::body(tooltip_text), widget::tooltip::Position::Bottom)
+        .into()
 }
 
 fn context_menu_entry(label: &'static str, message: Message) -> Element<'static, Message> {
