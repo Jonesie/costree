@@ -1,0 +1,38 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d5a53"/>
+      <stop offset="1" stop-color="#0c332f"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="4" y="4" width="248" height="248" rx="56" fill="url(#bg)"/>
+
+  <!-- trunk -->
+  <path d="M128 200 L128 160" stroke="#c9a06a" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- branches (directory-tree structure doubling as a canopy) -->
+  <g stroke="#8fe3c7" stroke-width="6" stroke-linecap="round" fill="none">
+    <path d="M128 160 L128 128"/>
+    <path d="M128 140 L92 108"/>
+    <path d="M128 140 L164 108"/>
+    <path d="M128 128 L96 76"/>
+    <path d="M128 128 L128 68"/>
+    <path d="M128 128 L160 76"/>
+    <path d="M92 108 L68 86"/>
+    <path d="M164 108 L188 86"/>
+  </g>
+
+  <!-- nodes -->
+  <g fill="#eafff6">
+    <circle cx="128" cy="200" r="7"/>
+    <circle cx="128" cy="140" r="7"/>
+    <circle cx="92" cy="108" r="7"/>
+    <circle cx="164" cy="108" r="7"/>
+    <circle cx="68" cy="86" r="9"/>
+    <circle cx="96" cy="76" r="9"/>
+    <circle cx="128" cy="68" r="10"/>
+    <circle cx="160" cy="76" r="9"/>
+    <circle cx="188" cy="86" r="9"/>
+  </g>
+</svg>
