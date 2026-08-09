@@ -289,3 +289,171 @@ pub fn human_size(bytes: u64) -> String {
         format!("{size:.1} {}", UNITS[unit])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `scan()`'s cancellation check reads a global generation counter, so
+    /// tests that rely on a specific generation value must not run
+    /// concurrently with each other (cargo test runs tests in parallel by
+    /// default within one process).
+    static GENERATION_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn entry(name: &str, path: &str, size: u64, is_dir: bool, children: Vec<Entry>) -> Entry {
+        Entry {
+            name: name.to_string(),
+            path: PathBuf::from(path),
+            size,
+            is_dir,
+            scanned: true,
+            children,
+        }
+    }
+
+    #[test]
+    fn human_size_formats_bytes() {
+        assert_eq!(human_size(0), "0 B");
+        assert_eq!(human_size(512), "512 B");
+        assert_eq!(human_size(1024), "1.0 KB");
+        assert_eq!(human_size(1536), "1.5 KB");
+        assert_eq!(human_size(1024 * 1024), "1.0 MB");
+        assert_eq!(human_size(1024 * 1024 * 1024), "1.0 GB");
+    }
+
+    #[test]
+    fn find_entry_locates_nested_path() {
+        let child = entry("b", "/a/b", 10, false, vec![]);
+        let root = entry("a", "/a", 10, true, vec![child]);
+
+        assert_eq!(find_entry(&root, Path::new("/a/b")).map(|e| &e.name), Some(&"b".to_string()));
+        assert!(find_entry(&root, Path::new("/a/missing")).is_none());
+    }
+
+    #[test]
+    fn remove_path_updates_ancestor_size_and_sort_order() {
+        let small = entry("small", "/a/small", 10, false, vec![]);
+        let big = entry("big", "/a/big", 100, false, vec![]);
+        let mut root = entry("a", "/a", 110, true, vec![big, small]);
+
+        assert!(remove_path(&mut root, Path::new("/a/big")));
+        assert_eq!(root.size, 10);
+        assert_eq!(root.children.len(), 1);
+        assert_eq!(root.children[0].name, "small");
+    }
+
+    #[test]
+    fn remove_path_returns_false_for_missing_entry() {
+        let mut root = entry("a", "/a", 0, true, vec![]);
+        assert!(!remove_path(&mut root, Path::new("/a/missing")));
+        assert_eq!(root.children.len(), 0);
+    }
+
+    #[test]
+    fn remove_path_recurses_into_nested_directories() {
+        let grandchild = entry("g", "/a/b/g", 5, false, vec![]);
+        let child = entry("b", "/a/b", 5, true, vec![grandchild]);
+        let mut root = entry("a", "/a", 5, true, vec![child]);
+
+        assert!(remove_path(&mut root, Path::new("/a/b/g")));
+        assert_eq!(root.size, 0);
+        assert_eq!(root.children[0].children.len(), 0);
+    }
+
+    #[test]
+    fn rename_entry_rewrites_descendant_paths() {
+        let grandchild = entry("g", "/a/b/g", 5, false, vec![]);
+        let child = entry("b", "/a/b", 5, true, vec![grandchild]);
+        let mut root = entry("a", "/a", 5, true, vec![child]);
+
+        assert!(rename_entry(&mut root, Path::new("/a/b"), Path::new("/a/c")));
+
+        let renamed = &root.children[0];
+        assert_eq!(renamed.name, "c");
+        assert_eq!(renamed.path, PathBuf::from("/a/c"));
+        assert_eq!(renamed.children[0].path, PathBuf::from("/a/c/g"));
+        assert_eq!(renamed.children[0].name, "g");
+    }
+
+    #[test]
+    fn rename_entry_returns_false_for_missing_entry() {
+        let mut root = entry("a", "/a", 0, true, vec![]);
+        assert!(!rename_entry(&mut root, Path::new("/a/missing"), Path::new("/a/renamed")));
+    }
+
+    #[test]
+    fn subtree_matches_checks_name_and_descendants() {
+        let child = entry("target.txt", "/a/target.txt", 1, false, vec![]);
+        let root = entry("a", "/a", 1, true, vec![child]);
+
+        assert!(subtree_matches(&root, "target"));
+        assert!(subtree_matches(&root, "a")); // matches root's own name
+        assert!(!subtree_matches(&root, "nope"));
+    }
+
+    #[test]
+    fn detect_roots_always_includes_home_and_filesystem_root() {
+        let home = PathBuf::from("/home/example");
+        let roots = detect_roots(&home);
+
+        assert!(roots.iter().any(|(label, path)| label == "Home" && path == &home));
+        assert!(roots.iter().any(|(_, path)| path.as_path() == Path::new("/")));
+    }
+
+    #[test]
+    fn list_top_level_reads_real_directory() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        fs::write(dir.path().join("file.txt"), b"hello").expect("write file");
+        fs::create_dir(dir.path().join("subdir")).expect("create subdir");
+
+        let listed = list_top_level(dir.path());
+
+        assert!(listed.is_dir);
+        assert!(!listed.scanned);
+        assert_eq!(listed.children.len(), 2);
+
+        let file = listed.children.iter().find(|c| c.name == "file.txt").expect("file listed");
+        assert!(!file.is_dir);
+        assert!(file.scanned);
+        assert_eq!(file.size, 5);
+
+        let subdir = listed.children.iter().find(|c| c.name == "subdir").expect("subdir listed");
+        assert!(subdir.is_dir);
+        assert!(!subdir.scanned);
+        assert_eq!(subdir.size, 0);
+    }
+
+    #[test]
+    fn scan_computes_recursive_size() {
+        let _guard = GENERATION_TEST_LOCK.lock().unwrap();
+
+        let dir = tempfile::tempdir().expect("create temp dir");
+        fs::write(dir.path().join("a.txt"), b"12345").expect("write file"); // 5 bytes
+        let sub = dir.path().join("sub");
+        fs::create_dir(&sub).expect("create subdir");
+        fs::write(sub.join("b.txt"), b"1234567890").expect("write file"); // 10 bytes
+
+        let generation = next_generation();
+        let scanned = scan(dir.path(), generation).expect("scan should not be cancelled");
+
+        assert!(scanned.scanned);
+        assert_eq!(scanned.size, 15);
+
+        let sub_entry = scanned.children.iter().find(|c| c.name == "sub").expect("subdir scanned");
+        assert!(sub_entry.scanned);
+        assert_eq!(sub_entry.size, 10);
+    }
+
+    #[test]
+    fn scan_returns_none_once_generation_is_superseded() {
+        let _guard = GENERATION_TEST_LOCK.lock().unwrap();
+
+        let dir = tempfile::tempdir().expect("create temp dir");
+        fs::create_dir(dir.path().join("sub")).expect("create subdir");
+
+        let stale_generation = next_generation();
+        next_generation(); // supersede it
+
+        assert!(scan(dir.path(), stale_generation).is_none());
+    }
+}
