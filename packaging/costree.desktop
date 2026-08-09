@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=CosTree
+Comment=Graphical disk usage analyzer for the COSMIC desktop
+Exec=costree
+Icon=drive-harddisk
+Terminal=false
+Categories=Utility;FileTools;
+Keywords=disk;usage;storage;analyzer;

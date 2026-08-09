@@ -22,3 +22,19 @@ features = [
 
 [dev-dependencies]
 tempfile = "3"
+
+[package.metadata.deb]
+maintainer = "Jonesie <peter@jonesie.net.nz>"
+copyright = "2026, Jonesie"
+license-file = ["LICENSE", "4"]
+extended-description = """\
+CosTree scans a directory tree and shows file/folder sizes, with
+incremental scanning, search/filtering, and file operations (open,
+rename, delete) — built with libcosmic for the COSMIC desktop."""
+depends = "$auto"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/costree", "usr/bin/", "755"],
+    ["packaging/costree.desktop", "usr/share/applications/", "644"],
+]

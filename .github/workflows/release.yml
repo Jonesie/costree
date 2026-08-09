@@ -23,16 +23,26 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Install cargo-deb
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+
       - name: Build release binary
         run: cargo build --release --verbose
 
-      - name: Package
+      - name: Package tarball
         run: |
           strip target/release/costree
           mkdir -p dist
           tar -czf dist/costree-linux-x86_64.tar.gz -C target/release costree
 
-      - name: Upload release asset
+      - name: Build .deb package
+        run: cargo deb --no-build --output dist/
+
+      - name: Upload release assets
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/costree-linux-x86_64.tar.gz
+          files: |
+            dist/costree-linux-x86_64.tar.gz
+            dist/*.deb
