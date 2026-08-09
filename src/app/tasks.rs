@@ -1,12 +1,55 @@
 // SPDX-License-Identifier: MIT
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock};
 
 use cosmic::prelude::*;
+use tokio::sync::Semaphore;
 
 use crate::scanner;
 
 use super::Message;
+
+/// Caps how many top-level directories get scanned concurrently. A large
+/// home directory can easily have 100+ top-level entries; firing a blocking
+/// OS thread for every single one at once (even on many cores) saturates
+/// CPU and disk I/O badly enough to starve the GUI thread and make the
+/// window appear frozen. Small and fixed rather than core-count-scaled,
+/// since UI responsiveness matters more here than raw scan throughput.
+static SCAN_CONCURRENCY: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(4));
+
+/// How long typing has to pause before a search actually runs.
+const SEARCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(150);
+
+pub(super) fn spawn_search_debounce(generation: u64) -> Task<cosmic::Action<Message>> {
+    Task::perform(
+        async move {
+            tokio::time::sleep(SEARCH_DEBOUNCE).await;
+            generation
+        },
+        |generation| cosmic::Action::App(Message::SearchDebounced(generation)),
+    )
+}
+
+/// Runs the actual search on a blocking thread, never the GUI thread —
+/// `search_index()` is fast, but "fast" still isn't "free" on a huge index,
+/// and running it inline in `update()` was blocking rendering (including
+/// the "Searching…" indicator itself) long enough to look like a freeze.
+pub(super) fn spawn_search(
+    index: Arc<scanner::SearchIndex>,
+    query: String,
+    generation: u64,
+) -> Task<cosmic::Action<Message>> {
+    Task::perform(
+        async move {
+            let results = tokio::task::spawn_blocking(move || scanner::search_index(&index, &query))
+                .await
+                .expect("search task panicked");
+            (generation, results)
+        },
+        |(generation, results)| cosmic::Action::App(Message::SearchResultsReady(generation, results)),
+    )
+}
 
 pub(super) fn spawn_top_level_listing(root: PathBuf) -> Task<cosmic::Action<Message>> {
     Task::perform(
@@ -22,6 +65,7 @@ pub(super) fn spawn_top_level_listing(root: PathBuf) -> Task<cosmic::Action<Mess
 pub(super) fn spawn_branch_scan(path: PathBuf, generation: u64) -> Task<cosmic::Action<Message>> {
     Task::perform(
         async move {
+            let _permit = SCAN_CONCURRENCY.acquire().await.expect("semaphore never closes");
             let result_path = path.clone();
             let entry = tokio::task::spawn_blocking(move || scanner::scan(&path, generation))
                 .await

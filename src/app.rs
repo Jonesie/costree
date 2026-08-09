@@ -7,6 +7,7 @@ mod view;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use cosmic::iced::Subscription;
 use cosmic::prelude::*;
@@ -31,6 +32,23 @@ pub struct AppModel {
     total_branches: usize,
     hide_dotfiles: bool,
     search_query: String,
+    /// Flat, pre-lowercased index built incrementally as branches finish
+    /// scanning, so search doesn't have to walk the nested tree itself.
+    /// Arc'd so handing a snapshot to the background search task is an O(1)
+    /// refcount bump instead of a full clone of a potentially huge Vec.
+    search_index: Arc<scanner::SearchIndex>,
+    /// Cached result of the last completed search. Computed only when the
+    /// debounced search actually runs, not on every render — otherwise it
+    /// was being recomputed on every 150ms scan-progress tick too, not
+    /// just on keystrokes.
+    search_results: Option<HashSet<PathBuf>>,
+    /// True while waiting for typing to pause (or for the search itself to
+    /// finish) — drives the "Searching…" indicator.
+    searching: bool,
+    /// Bumped on every keystroke; a debounced search only takes effect if
+    /// its generation still matches this when it fires, so rapid typing
+    /// doesn't stack up redundant searches.
+    search_generation: u64,
     /// Text currently in the root-path field (may not match `scan_root` while being edited).
     root_input: String,
     /// Home, filesystem root, and other detected mounted volumes, for the quick-pick dropdown.
@@ -61,6 +79,8 @@ pub enum Message {
     Tick,
     HideDotfilesToggled(bool),
     SearchChanged(String),
+    SearchDebounced(u64),
+    SearchResultsReady(u64, HashSet<PathBuf>),
     RootInputChanged(String),
     RootSubmitted,
     QuickRootSelected(usize),
@@ -92,6 +112,9 @@ impl AppModel {
         self.confirm_delete = None;
         self.rename_target = None;
         self.last_error = None;
+        Arc::make_mut(&mut self.search_index).clear();
+        self.search_results = None;
+        self.searching = false;
         tasks::spawn_top_level_listing(root)
     }
 
@@ -149,6 +172,10 @@ impl cosmic::Application for AppModel {
             total_branches: 0,
             hide_dotfiles,
             search_query: String::new(),
+            search_index: Arc::new(Vec::new()),
+            search_results: None,
+            searching: false,
+            search_generation: 0,
             root_input: scan_root.to_string_lossy().into_owned(),
             quick_roots: scanner::detect_roots(&scan_root),
             generation: 0,

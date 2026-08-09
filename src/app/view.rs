@@ -13,6 +13,14 @@ use super::{AppModel, Message};
 
 const MUTED_TEXT: cosmic::iced::Color = cosmic::iced::Color::from_rgb(0.5, 0.5, 0.5);
 
+/// While searching, every matching branch is force-expanded so results are
+/// visible without manual clicking. A broad query (even a single common
+/// letter) on a huge tree can match a large fraction of it, which without a
+/// cap would try to build hundreds of thousands of widget rows in one
+/// synchronous render and hang the whole UI. This bounds that regardless of
+/// how many entries actually match.
+const MAX_SEARCH_RESULTS: usize = 1000;
+
 pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
     let spacing = cosmic::theme::spacing();
 
@@ -64,6 +72,7 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
                 .on_input(Message::SearchChanged)
                 .width(Length::FillPortion(1)),
         )
+        .push_maybe(app.searching.then(|| widget::text::caption("Searching…")))
         .align_y(Alignment::Center)
         .spacing(spacing.space_s);
 
@@ -82,9 +91,7 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
             .center(Length::Fill)
             .into()
     } else if let Some(root) = &app.root {
-        let search = app.search_query.to_lowercase();
-        let search_matches =
-            if search.is_empty() { None } else { Some(scanner::matching_paths(root, &search)) };
+        let search_matches = app.search_results.as_ref();
         let window_id = app.core.main_window_id();
         let mut rows: Vec<Element<Message>> = Vec::new();
         render_entry(
@@ -93,10 +100,23 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
             &app.expanded,
             &app.selected,
             app.hide_dotfiles,
-            search_matches.as_ref(),
+            search_matches,
             window_id,
             &mut rows,
         );
+
+        if let Some(matches) = search_matches {
+            if matches.len() > rows.len() {
+                rows.push(
+                    widget::text::caption(format!(
+                        "Showing the first {} matches — refine your search to see more.",
+                        rows.len()
+                    ))
+                    .class(cosmic::theme::Text::Color(MUTED_TEXT))
+                    .into(),
+                );
+            }
+        }
 
         let mut list = widget::column::with_capacity(rows.len())
             .spacing(2)
@@ -265,6 +285,9 @@ fn render_entry<'a>(
 
     if let Some(matches) = search_matches {
         if !matches.contains(&entry.path) {
+            return;
+        }
+        if rows.len() >= MAX_SEARCH_RESULTS {
             return;
         }
     }

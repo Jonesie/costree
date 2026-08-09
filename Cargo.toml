@@ -9,7 +9,7 @@ keywords = ["disk-usage", "cosmic", "gui"]
 categories = ["filesystem", "gui"]
 
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"

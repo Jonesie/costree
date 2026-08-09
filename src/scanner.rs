@@ -224,32 +224,56 @@ fn rewrite_paths(node: &mut Entry, old_prefix: &Path, new_prefix: &Path) {
     }
 }
 
-/// Returns the paths of every entry that matches `query` (expected already
-/// lowercased) by name, plus every ancestor of a match — i.e. exactly the
-/// set of entries a search-filtered tree view should keep.
-///
-/// This does one bottom-up pass over the whole tree rather than checking
-/// "does this subtree contain a match" independently for each node (which
-/// re-walks the same nested subtrees over and over — for a directory with
-/// deep, wide trees like `node_modules` or Rust `target` dirs, that
-/// blows up badly enough to freeze the UI on a single keystroke).
-pub fn matching_paths(entry: &Entry, query: &str) -> HashSet<PathBuf> {
-    let mut matches = HashSet::new();
-    collect_matches(entry, query, &mut matches);
-    matches
+/// A flattened, pre-lowercased `(path, name)` entry for fast searching.
+/// Built incrementally as branches finish scanning, so a search never has
+/// to walk (and re-lowercase) the nested tree itself.
+pub type SearchIndex = Vec<(PathBuf, String)>;
+
+/// Appends `entry` and every descendant to `index`, lowercasing each name
+/// once up front so repeated searches don't have to.
+pub fn index_subtree(entry: &Entry, index: &mut SearchIndex) {
+    index.push((entry.path.clone(), entry.name.to_lowercase()));
+    for child in &entry.children {
+        index_subtree(child, index);
+    }
 }
 
-fn collect_matches(entry: &Entry, query: &str, matches: &mut HashSet<PathBuf>) -> bool {
-    let mut any = entry.name.to_lowercase().contains(query);
-    for child in &entry.children {
-        if collect_matches(child, query, matches) {
-            any = true;
+/// Removes every indexed entry at or under `path` (e.g. after a delete).
+pub fn remove_from_index(index: &mut SearchIndex, path: &Path) {
+    index.retain(|(p, _)| !p.starts_with(path));
+}
+
+/// Rewrites every indexed path with the `old_prefix` prefix to use
+/// `new_prefix` instead (e.g. after a rename).
+pub fn reindex_prefix(index: &mut SearchIndex, old_prefix: &Path, new_prefix: &Path) {
+    for (path, _) in index.iter_mut() {
+        if let Ok(rel) = path.strip_prefix(old_prefix) {
+            *path = new_prefix.join(rel);
         }
     }
-    if any {
-        matches.insert(entry.path.clone());
+}
+
+/// Returns the paths of every indexed entry whose name matches `query`
+/// (expected already lowercased), plus every ancestor of a match — i.e.
+/// exactly the set of entries a search-filtered tree view should keep.
+///
+/// Once an ancestor has been recorded by an earlier match, every path
+/// above it must already be recorded too, so walking stops as soon as it
+/// hits one — this keeps the total ancestor-walking work bounded across
+/// the whole index rather than repeating it per match.
+pub fn search_index(index: &SearchIndex, query: &str) -> HashSet<PathBuf> {
+    let mut matches = HashSet::new();
+    for (path, name_lower) in index {
+        if !name_lower.contains(query) {
+            continue;
+        }
+        for ancestor in path.ancestors() {
+            if !matches.insert(ancestor.to_path_buf()) {
+                break;
+            }
+        }
     }
-    any
+    matches
 }
 
 /// Quick-access scan roots: the user's home directory, the filesystem root,
@@ -404,13 +428,28 @@ mod tests {
     }
 
     #[test]
-    fn matching_paths_includes_matches_and_their_ancestors() {
+    fn index_subtree_flattens_and_lowercases_names() {
+        let child = entry("Target.TXT", "/a/Target.TXT", 1, false, vec![]);
+        let root = entry("A", "/a", 1, true, vec![child]);
+
+        let mut index = SearchIndex::new();
+        index_subtree(&root, &mut index);
+
+        assert_eq!(index.len(), 2);
+        assert!(index.contains(&(PathBuf::from("/a"), "a".to_string())));
+        assert!(index.contains(&(PathBuf::from("/a/Target.TXT"), "target.txt".to_string())));
+    }
+
+    #[test]
+    fn search_index_includes_matches_and_their_ancestors() {
         let hit = entry("target.txt", "/a/b/target.txt", 1, false, vec![]);
         let miss = entry("other.txt", "/a/b/other.txt", 1, false, vec![]);
         let b = entry("b", "/a/b", 2, true, vec![hit, miss]);
         let root = entry("a", "/a", 2, true, vec![b]);
 
-        let matches = matching_paths(&root, "target");
+        let mut index = SearchIndex::new();
+        index_subtree(&root, &mut index);
+        let matches = search_index(&index, "target");
 
         assert!(matches.contains(Path::new("/a/b/target.txt")));
         assert!(matches.contains(Path::new("/a/b"))); // ancestor of a match
@@ -419,11 +458,42 @@ mod tests {
     }
 
     #[test]
-    fn matching_paths_is_empty_when_nothing_matches() {
+    fn search_index_is_empty_when_nothing_matches() {
         let child = entry("file.txt", "/a/file.txt", 1, false, vec![]);
         let root = entry("a", "/a", 1, true, vec![child]);
 
-        assert!(matching_paths(&root, "nope").is_empty());
+        let mut index = SearchIndex::new();
+        index_subtree(&root, &mut index);
+
+        assert!(search_index(&index, "nope").is_empty());
+    }
+
+    #[test]
+    fn remove_from_index_drops_path_and_descendants() {
+        let child = entry("g", "/a/b/g", 1, false, vec![]);
+        let b = entry("b", "/a/b", 1, true, vec![child]);
+        let root = entry("a", "/a", 1, true, vec![b]);
+
+        let mut index = SearchIndex::new();
+        index_subtree(&root, &mut index);
+        remove_from_index(&mut index, Path::new("/a/b"));
+
+        assert_eq!(index, vec![(PathBuf::from("/a"), "a".to_string())]);
+    }
+
+    #[test]
+    fn reindex_prefix_rewrites_matching_paths() {
+        let child = entry("g", "/a/b/g", 1, false, vec![]);
+        let b = entry("b", "/a/b", 1, true, vec![child]);
+        let root = entry("a", "/a", 1, true, vec![b]);
+
+        let mut index = SearchIndex::new();
+        index_subtree(&root, &mut index);
+        reindex_prefix(&mut index, Path::new("/a/b"), Path::new("/a/c"));
+
+        assert!(index.contains(&(PathBuf::from("/a/c"), "b".to_string())));
+        assert!(index.contains(&(PathBuf::from("/a/c/g"), "g".to_string())));
+        assert!(index.contains(&(PathBuf::from("/a"), "a".to_string())));
     }
 
     #[test]

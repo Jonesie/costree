@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use cosmic::prelude::*;
 
@@ -24,6 +25,7 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
             app.pending_branches = branch_dirs.len();
             app.total_branches = branch_dirs.len();
             app.root = Some(entry);
+            scanner::index_subtree(app.root.as_ref().unwrap(), Arc::make_mut(&mut app.search_index));
 
             let generation = app.generation;
             return Task::batch(
@@ -34,6 +36,7 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
         }
         Message::BranchScanned(path, scanned) => {
             if let Some(entry) = scanned {
+                scanner::index_subtree(&entry, Arc::make_mut(&mut app.search_index));
                 if let Some(root) = &mut app.root {
                     if let Some(child) = root.children.iter_mut().find(|c| c.path == path) {
                         *child = entry;
@@ -73,6 +76,26 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
         }
         Message::SearchChanged(value) => {
             app.search_query = value;
+            app.search_generation += 1;
+            if app.search_query.is_empty() {
+                app.search_results = None;
+                app.searching = false;
+            } else {
+                app.searching = true;
+                return tasks::spawn_search_debounce(app.search_generation);
+            }
+        }
+        Message::SearchDebounced(generation) => {
+            if generation == app.search_generation {
+                let query = app.search_query.to_lowercase();
+                return tasks::spawn_search(app.search_index.clone(), query, generation);
+            }
+        }
+        Message::SearchResultsReady(generation, results) => {
+            if generation == app.search_generation {
+                app.search_results = Some(results);
+                app.searching = false;
+            }
         }
         Message::RootInputChanged(value) => {
             app.root_input = value;
@@ -119,6 +142,7 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
             if let Some(root) = &mut app.root {
                 scanner::remove_path(root, &path);
             }
+            scanner::remove_from_index(Arc::make_mut(&mut app.search_index), &path);
             if app.selected.as_deref() == Some(path.as_path()) {
                 app.selected = None;
             }
@@ -163,6 +187,7 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
             if let Some(root) = &mut app.root {
                 scanner::rename_entry(root, &old_path, &new_path);
             }
+            scanner::reindex_prefix(Arc::make_mut(&mut app.search_index), &old_path, &new_path);
             if let Some(rel) = app.selected.as_ref().and_then(|p| p.strip_prefix(&old_path).ok()) {
                 app.selected = Some(new_path.join(rel));
             }
