@@ -35,6 +35,8 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
         app.quick_roots.iter().map(|(label, _)| label.clone()).collect();
 
     let title_content: Element<Message> = if app.title_editing {
+        let root_input_valid = PathBuf::from(app.root_input.trim()).is_dir();
+
         widget::row::with_capacity(3)
             .push(
                 widget::text_input("Path to scan…", app.root_input.clone())
@@ -44,7 +46,7 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
             )
             .push(
                 widget::button::icon(widget::icon::from_name("object-select-symbolic"))
-                    .on_press(Message::RootSubmitted),
+                    .on_press_maybe(root_input_valid.then_some(Message::RootSubmitted)),
             )
             .push(
                 widget::button::icon(widget::icon::from_name("window-close-symbolic"))
