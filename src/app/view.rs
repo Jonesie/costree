@@ -31,8 +31,35 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
 
     let scanning = app.listing || app.pending_branches > 0;
 
+    let title_content: Element<Message> = if app.title_editing {
+        widget::row::with_capacity(2)
+            .push(
+                widget::text_input("Path to scan…", app.root_input.clone())
+                    .on_input(Message::RootInputChanged)
+                    .on_submit(|_| Message::RootSubmitted)
+                    .width(Length::Fixed(420.0)),
+            )
+            .push(
+                widget::button::icon(widget::icon::from_name("window-close-symbolic"))
+                    .on_press(Message::TitleEditCancelled),
+            )
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+    } else {
+        widget::row::with_capacity(2)
+            .push(widget::text::title3(app.scan_root.to_string_lossy().into_owned()))
+            .push(
+                widget::button::icon(widget::icon::from_name("document-edit-symbolic"))
+                    .on_press(Message::EditTitle),
+            )
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+    };
+
     let title_row = widget::row::with_capacity(5)
-        .push(widget::text::title3(app.scan_root.to_string_lossy().into_owned()))
+        .push(title_content)
         .push(widget::Space::new().width(Length::Fill))
         .push(
             toolbar_button("process-stop-symbolic", "Cancel")
@@ -49,14 +76,7 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
     let quick_root_labels: Vec<String> =
         app.quick_roots.iter().map(|(label, _)| label.clone()).collect();
 
-    let controls_row = widget::row::with_capacity(5)
-        .push(
-            widget::text_input("Path to scan…", app.root_input.clone())
-                .on_input(Message::RootInputChanged)
-                .on_submit(|_| Message::RootSubmitted)
-                .width(Length::FillPortion(2)),
-        )
-        .push(widget::button::standard("Go").on_press(Message::RootSubmitted))
+    let controls_row = widget::row::with_capacity(4)
         .push(widget::dropdown(
             quick_root_labels,
             None,

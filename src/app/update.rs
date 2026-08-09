@@ -112,6 +112,24 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
                 return app.begin_scan(path);
             }
         }
+        Message::EditTitle => {
+            app.title_editing = true;
+            app.root_input = app.scan_root.to_string_lossy().into_owned();
+            return tasks::spawn_folder_picker(app.scan_root.clone());
+        }
+        Message::TitleEditCancelled => {
+            app.title_editing = false;
+        }
+        Message::FolderPicked(path) => {
+            return app.begin_scan(path);
+        }
+        Message::FolderPickCancelled => {
+            // Leave the title editable — the user may still want to type a
+            // path by hand instead of using the dialog.
+        }
+        Message::FolderPickError(err) => {
+            app.last_error = Some(err);
+        }
         Message::DeleteRequested => {
             if let Some(selected) = &app.selected {
                 if *selected != app.scan_root {

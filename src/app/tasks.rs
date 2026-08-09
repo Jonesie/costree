@@ -111,6 +111,28 @@ pub(super) fn spawn_rename(old_path: PathBuf, new_path: PathBuf) -> Task<cosmic:
     )
 }
 
+/// Opens the native folder-picker dialog, starting from `current`. Ashpd
+/// (the xdg-portal backend) doesn't actually honor the starting directory
+/// yet, but setting it is harmless and future-proof.
+pub(super) fn spawn_folder_picker(current: PathBuf) -> Task<cosmic::Action<Message>> {
+    cosmic::task::future(async move {
+        let dialog = cosmic::dialog::file_chooser::open::Dialog::new()
+            .title("Choose a folder to scan")
+            .directory(current);
+
+        match dialog.open_folder().await {
+            Ok(response) => match response.url().to_file_path() {
+                Ok(path) => Message::FolderPicked(path),
+                Err(()) => {
+                    Message::FolderPickError(format!("unsupported location: {}", response.url()))
+                }
+            },
+            Err(cosmic::dialog::file_chooser::Error::Cancelled) => Message::FolderPickCancelled,
+            Err(err) => Message::FolderPickError(err.to_string()),
+        }
+    })
+}
+
 /// For a directory, launches COSMIC Files on it. cosmic-files has no CLI
 /// support for selecting a specific file within its parent folder, so for a
 /// file this instead opens it directly with its default application (via

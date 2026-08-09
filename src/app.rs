@@ -51,6 +51,9 @@ pub struct AppModel {
     search_generation: u64,
     /// Text currently in the root-path field (may not match `scan_root` while being edited).
     root_input: String,
+    /// True while the title is showing an editable path field (opened via
+    /// the pen icon) instead of the plain scan-root text.
+    title_editing: bool,
     /// Home, filesystem root, and other detected mounted volumes, for the quick-pick dropdown.
     quick_roots: Vec<(String, PathBuf)>,
     /// Current scan generation; bumped on every rescan or cancel so in-flight
@@ -84,6 +87,11 @@ pub enum Message {
     RootInputChanged(String),
     RootSubmitted,
     QuickRootSelected(usize),
+    EditTitle,
+    TitleEditCancelled,
+    FolderPicked(PathBuf),
+    FolderPickCancelled,
+    FolderPickError(String),
     OpenInFiles(PathBuf),
     RenameRequested(PathBuf),
     RenameInputChanged(String),
@@ -102,6 +110,7 @@ impl AppModel {
         self.generation = scanner::next_generation();
         self.scan_root = root.clone();
         self.root_input = root.to_string_lossy().into_owned();
+        self.title_editing = false;
         self.expanded.clear();
         self.expanded.insert(root.clone());
         self.listing = true;
@@ -177,6 +186,7 @@ impl cosmic::Application for AppModel {
             searching: false,
             search_generation: 0,
             root_input: scan_root.to_string_lossy().into_owned(),
+            title_editing: false,
             quick_roots: scanner::detect_roots(&scan_root),
             generation: 0,
             rename_target: None,
