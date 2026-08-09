@@ -31,13 +31,20 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
 
     let scanning = app.listing || app.pending_branches > 0;
 
+    let quick_root_labels: Vec<String> =
+        app.quick_roots.iter().map(|(label, _)| label.clone()).collect();
+
     let title_content: Element<Message> = if app.title_editing {
-        widget::row::with_capacity(2)
+        widget::row::with_capacity(3)
             .push(
                 widget::text_input("Path to scan…", app.root_input.clone())
                     .on_input(Message::RootInputChanged)
                     .on_submit(|_| Message::RootSubmitted)
                     .width(Length::Fixed(420.0)),
+            )
+            .push(
+                widget::button::icon(widget::icon::from_name("object-select-symbolic"))
+                    .on_press(Message::RootSubmitted),
             )
             .push(
                 widget::button::icon(widget::icon::from_name("window-close-symbolic"))
@@ -58,7 +65,12 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
             .into()
     };
 
-    let title_row = widget::row::with_capacity(5)
+    let title_row = widget::row::with_capacity(6)
+        .push(widget::dropdown(
+            quick_root_labels,
+            None,
+            Message::QuickRootSelected,
+        ))
         .push(title_content)
         .push(widget::Space::new().width(Length::Fill))
         .push(
@@ -73,15 +85,7 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
         .align_y(Alignment::Center)
         .spacing(spacing.space_s);
 
-    let quick_root_labels: Vec<String> =
-        app.quick_roots.iter().map(|(label, _)| label.clone()).collect();
-
-    let controls_row = widget::row::with_capacity(4)
-        .push(widget::dropdown(
-            quick_root_labels,
-            None,
-            Message::QuickRootSelected,
-        ))
+    let controls_row = widget::row::with_capacity(3)
         .push(
             widget::checkbox(app.hide_dotfiles)
                 .label("Hide dotfiles")
