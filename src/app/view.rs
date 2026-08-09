@@ -83,6 +83,8 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
             .into()
     } else if let Some(root) = &app.root {
         let search = app.search_query.to_lowercase();
+        let search_matches =
+            if search.is_empty() { None } else { Some(scanner::matching_paths(root, &search)) };
         let window_id = app.core.main_window_id();
         let mut rows: Vec<Element<Message>> = Vec::new();
         render_entry(
@@ -91,7 +93,7 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
             &app.expanded,
             &app.selected,
             app.hide_dotfiles,
-            &search,
+            search_matches.as_ref(),
             window_id,
             &mut rows,
         );
@@ -253,7 +255,7 @@ fn render_entry<'a>(
     expanded: &HashSet<PathBuf>,
     selected: &Option<PathBuf>,
     hide_dotfiles: bool,
-    search: &str,
+    search_matches: Option<&HashSet<PathBuf>>,
     window_id: Option<cosmic::iced::window::Id>,
     rows: &mut Vec<Element<'a, Message>>,
 ) {
@@ -261,14 +263,16 @@ fn render_entry<'a>(
         return;
     }
 
-    if !search.is_empty() && !scanner::subtree_matches(entry, search) {
-        return;
+    if let Some(matches) = search_matches {
+        if !matches.contains(&entry.path) {
+            return;
+        }
     }
 
     let indent = f32::from(depth) * 20.0;
     // While searching, force every matching branch open so results are visible
     // without the user having to manually expand down to them.
-    let is_expanded = !search.is_empty() || expanded.contains(&entry.path);
+    let is_expanded = search_matches.is_some() || expanded.contains(&entry.path);
     let is_selected = selected.as_deref() == Some(entry.path.as_path());
     let unscanned = entry.is_dir && !entry.scanned;
     let text_class = if unscanned {
@@ -346,7 +350,7 @@ fn render_entry<'a>(
                 expanded,
                 selected,
                 hide_dotfiles,
-                search,
+                search_matches,
                 window_id,
                 rows,
             );

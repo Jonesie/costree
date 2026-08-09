@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -223,11 +224,32 @@ fn rewrite_paths(node: &mut Entry, old_prefix: &Path, new_prefix: &Path) {
     }
 }
 
-/// True if `entry`'s name, or the name of any entry in its subtree,
-/// contains `query` (expected already lowercased).
-pub fn subtree_matches(entry: &Entry, query: &str) -> bool {
-    entry.name.to_lowercase().contains(query)
-        || entry.children.iter().any(|c| subtree_matches(c, query))
+/// Returns the paths of every entry that matches `query` (expected already
+/// lowercased) by name, plus every ancestor of a match — i.e. exactly the
+/// set of entries a search-filtered tree view should keep.
+///
+/// This does one bottom-up pass over the whole tree rather than checking
+/// "does this subtree contain a match" independently for each node (which
+/// re-walks the same nested subtrees over and over — for a directory with
+/// deep, wide trees like `node_modules` or Rust `target` dirs, that
+/// blows up badly enough to freeze the UI on a single keystroke).
+pub fn matching_paths(entry: &Entry, query: &str) -> HashSet<PathBuf> {
+    let mut matches = HashSet::new();
+    collect_matches(entry, query, &mut matches);
+    matches
+}
+
+fn collect_matches(entry: &Entry, query: &str, matches: &mut HashSet<PathBuf>) -> bool {
+    let mut any = entry.name.to_lowercase().contains(query);
+    for child in &entry.children {
+        if collect_matches(child, query, matches) {
+            any = true;
+        }
+    }
+    if any {
+        matches.insert(entry.path.clone());
+    }
+    any
 }
 
 /// Quick-access scan roots: the user's home directory, the filesystem root,
@@ -382,13 +404,26 @@ mod tests {
     }
 
     #[test]
-    fn subtree_matches_checks_name_and_descendants() {
-        let child = entry("target.txt", "/a/target.txt", 1, false, vec![]);
+    fn matching_paths_includes_matches_and_their_ancestors() {
+        let hit = entry("target.txt", "/a/b/target.txt", 1, false, vec![]);
+        let miss = entry("other.txt", "/a/b/other.txt", 1, false, vec![]);
+        let b = entry("b", "/a/b", 2, true, vec![hit, miss]);
+        let root = entry("a", "/a", 2, true, vec![b]);
+
+        let matches = matching_paths(&root, "target");
+
+        assert!(matches.contains(Path::new("/a/b/target.txt")));
+        assert!(matches.contains(Path::new("/a/b"))); // ancestor of a match
+        assert!(matches.contains(Path::new("/a"))); // ancestor of a match
+        assert!(!matches.contains(Path::new("/a/b/other.txt")));
+    }
+
+    #[test]
+    fn matching_paths_is_empty_when_nothing_matches() {
+        let child = entry("file.txt", "/a/file.txt", 1, false, vec![]);
         let root = entry("a", "/a", 1, true, vec![child]);
 
-        assert!(subtree_matches(&root, "target"));
-        assert!(subtree_matches(&root, "a")); // matches root's own name
-        assert!(!subtree_matches(&root, "nope"));
+        assert!(matching_paths(&root, "nope").is_empty());
     }
 
     #[test]
