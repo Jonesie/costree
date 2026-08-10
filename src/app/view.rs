@@ -105,11 +105,16 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
                 .label("Hide dotfiles")
                 .on_toggle(Message::HideDotfilesToggled),
         )
-        .push(
-            widget::search_input("Search…", app.search_query.clone())
+        .push({
+            let search_field = widget::search_input("Search…", app.search_query.clone())
                 .on_input(Message::SearchChanged)
-                .width(Length::FillPortion(1)),
-        )
+                .width(Length::FillPortion(1));
+            if app.search_query.is_empty() {
+                search_field
+            } else {
+                search_field.on_clear(Message::SearchChanged(String::new()))
+            }
+        })
         .push(search_toggle_button(
             ".*",
             "Use regular expression",
