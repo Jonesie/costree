@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786390335608,
+  "lastUpdate": 1786390702042,
   "repoUrl": "https://github.com/Jonesie/costree",
   "entries": {
     "Benchmark": [
@@ -119,6 +119,54 @@ window.BENCHMARK_DATA = {
             "name": "scan_synthetic_tree",
             "value": 1004943,
             "range": "± 63585",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "peter@jonesie.net.nz",
+            "name": "Jonesie",
+            "username": "Jonesie"
+          },
+          "committer": {
+            "email": "peter@jonesie.net.nz",
+            "name": "Jonesie",
+            "username": "Jonesie"
+          },
+          "distinct": true,
+          "id": "df72f9f10109b4acbc0795e50b4ff3a899d5274e",
+          "message": "CI: also run the new search_benchmark\n\nThe \"Run benchmark\" step only invoked scan_benchmark; the new\nsearch_benchmark (added in b98661d, issue #1) was never being run in\nCI, so its numbers weren't landing on the tracked benchmark history.\ncargo bench without an explicit --bench filter also tries to run the\nlib's own unit-test binary as a benchable target, which doesn't\nunderstand criterion's --output-format flag and errors — needed to\nname both bench targets explicitly instead.",
+          "timestamp": "2026-08-11T07:35:09+12:00",
+          "tree_id": "bf50cd53dc6e3d00079482cc764fe424042df6bd",
+          "url": "https://github.com/Jonesie/costree/commit/df72f9f10109b4acbc0795e50b4ff3a899d5274e"
+        },
+        "date": 1786390701563,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "scan_synthetic_tree",
+            "value": 1428924,
+            "range": "± 82352",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_narrow_500k",
+            "value": 19407440,
+            "range": "± 213448",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_broad_500k_uncapped",
+            "value": 341424355,
+            "range": "± 11198492",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_broad_500k_capped",
+            "value": 16373184,
+            "range": "± 358463",
             "unit": "ns/iter"
           }
         ]
