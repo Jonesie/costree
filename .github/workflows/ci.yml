@@ -55,7 +55,7 @@ jobs:
         # now, so criterion doesn't need its own baseline here at all.
         run: |
           rm -rf target/criterion
-          cargo bench --bench scan_benchmark -- --output-format bencher | tee bench-output.txt
+          cargo bench --bench scan_benchmark --bench search_benchmark -- --output-format bencher | tee bench-output.txt
 
       - name: Track benchmark history
         uses: benchmark-action/github-action-benchmark@v1
