@@ -30,7 +30,7 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
         .is_some_and(|p| *p != app.scan_root);
 
     let scanning = app.listing || app.pending_branches > 0;
-    let can_save = app.root.is_some() && !scanning;
+    let can_save = app.root.is_some() && !scanning && !app.saving_index;
 
     let quick_root_labels: Vec<String> =
         app.quick_roots.iter().map(|(label, _)| label.clone()).collect();
@@ -111,6 +111,7 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
                 .width(Length::FillPortion(1)),
         )
         .push_maybe(app.searching.then(|| widget::text::caption("Searching…")))
+        .push_maybe(app.saving_index.then(|| widget::text::caption("Saving…")))
         .align_y(Alignment::Center)
         .spacing(spacing.space_s);
 

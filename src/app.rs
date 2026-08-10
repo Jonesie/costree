@@ -68,6 +68,10 @@ pub struct AppModel {
     /// whenever a loaded `.costree` save was originally made. `None` while
     /// nothing has finished scanning/loading yet.
     last_scan_time: Option<u64>,
+    /// True while a manual "Save index" write is in flight — drives the
+    /// "Saving…" indicator and disables the Save button so a second save
+    /// can't be queued on top of one already running.
+    saving_index: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -135,6 +139,7 @@ impl AppModel {
         self.search_results = None;
         self.searching = false;
         self.last_scan_time = None;
+        self.saving_index = false;
         tasks::spawn_check_saved_index(root)
     }
 
@@ -203,6 +208,7 @@ impl cosmic::Application for AppModel {
             rename_target: None,
             config_handle,
             last_scan_time: None,
+            saving_index: false,
         };
 
         app.core_mut().set_header_title(APP_TITLE.to_string());

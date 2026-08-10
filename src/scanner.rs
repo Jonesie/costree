@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// Name of the folder a scanned root's saved index is stored under. Scans
 /// skip this folder entirely — it's app metadata, not user data to measure.
 pub const INDEX_DIR_NAME: &str = ".costree";
-const INDEX_FILE_NAME: &str = "index.json";
+const INDEX_FILE_NAME: &str = "index.bin";
 const INDEX_FORMAT_VERSION: u32 = 1;
 
 /// A single file or directory node in the scanned tree.
@@ -201,16 +201,22 @@ pub fn now_unix() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-/// Saves `root` under `<dest>/.costree/index.json`. Fails gracefully (no
-/// panics) if `dest` isn't writable — the caller is expected to surface the
-/// error rather than treat it as fatal.
+/// Saves `root` under `<dest>/.costree/index.bin`, in bincode's compact
+/// binary encoding rather than a text format — the tree stores a full path
+/// per entry, so a large scan's save file adds up fast in a verbose format
+/// like JSON. Streams straight to the file rather than building an
+/// in-memory buffer first, to keep peak memory down on a huge tree. Fails
+/// gracefully (no panics) if `dest` isn't writable — the caller is expected
+/// to surface the error rather than treat it as fatal.
 pub fn save_index(root: &Entry, dest: &Path) -> Result<(), String> {
     let index_dir = dest.join(INDEX_DIR_NAME);
     fs::create_dir_all(&index_dir).map_err(|err| err.to_string())?;
 
     let saved = SavedIndex { version: INDEX_FORMAT_VERSION, scanned_at: now_unix(), root: root.clone() };
-    let json = serde_json::to_string(&saved).map_err(|err| err.to_string())?;
-    fs::write(index_dir.join(INDEX_FILE_NAME), json).map_err(|err| err.to_string())
+    let mut file = fs::File::create(index_dir.join(INDEX_FILE_NAME)).map_err(|err| err.to_string())?;
+    bincode::serde::encode_into_std_write(&saved, &mut file, bincode::config::standard())
+        .map_err(|err| err.to_string())?;
+    Ok(())
 }
 
 /// Loads a previously saved index for `root`, if one exists and matches the
@@ -219,8 +225,9 @@ pub fn save_index(root: &Entry, dest: &Path) -> Result<(), String> {
 /// fresh scan rather than blocking the user with an error.
 pub fn load_index(root: &Path) -> Option<SavedIndex> {
     let path = root.join(INDEX_DIR_NAME).join(INDEX_FILE_NAME);
-    let data = fs::read_to_string(path).ok()?;
-    let saved: SavedIndex = serde_json::from_str(&data).ok()?;
+    let mut file = fs::File::open(path).ok()?;
+    let saved: SavedIndex =
+        bincode::serde::decode_from_std_read(&mut file, bincode::config::standard()).ok()?;
     (saved.version == INDEX_FORMAT_VERSION).then_some(saved)
 }
 

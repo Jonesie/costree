@@ -76,13 +76,16 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
         }
         Message::SaveIndex => {
             if let Some(root) = &app.root {
+                app.saving_index = true;
                 return tasks::spawn_save_index(root.clone(), app.scan_root.clone());
             }
         }
         Message::SaveIndexCompleted(Ok(())) => {
+            app.saving_index = false;
             app.last_error = None;
         }
         Message::SaveIndexCompleted(Err(err)) => {
+            app.saving_index = false;
             app.last_error = Some(format!("couldn't save index: {err}"));
         }
         Message::Rescan => {
