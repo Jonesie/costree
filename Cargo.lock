@@ -997,6 +997,8 @@ name = "costree"
 version = "0.1.0"
 dependencies = [
  "libcosmic",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
 ]

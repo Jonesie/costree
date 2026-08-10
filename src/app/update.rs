@@ -27,6 +27,12 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
             app.root = Some(entry);
             scanner::index_subtree(app.root.as_ref().unwrap(), Arc::make_mut(&mut app.search_index));
 
+            if branch_dirs.is_empty() {
+                // No subdirectories to scan in the background, so no
+                // BranchScanned will ever arrive to mark the scan complete.
+                app.last_scan_time = Some(scanner::now_unix());
+            }
+
             let generation = app.generation;
             return Task::batch(
                 branch_dirs
@@ -48,6 +54,7 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
             app.pending_branches = app.pending_branches.saturating_sub(1);
             if app.pending_branches == 0 {
                 scanner::clear_current_scan_path();
+                app.last_scan_time = Some(scanner::now_unix());
             }
         }
         Message::ToggleExpand(path) => {
@@ -57,6 +64,26 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
         }
         Message::Select(path) => {
             app.selected = Some(path);
+        }
+        Message::SavedIndexChecked(saved) => {
+            let Some(saved) = saved else {
+                return tasks::spawn_top_level_listing(app.scan_root.clone());
+            };
+            app.listing = false;
+            app.last_scan_time = Some(saved.scanned_at);
+            scanner::index_subtree(&saved.root, Arc::make_mut(&mut app.search_index));
+            app.root = Some(saved.root);
+        }
+        Message::SaveIndex => {
+            if let Some(root) = &app.root {
+                return tasks::spawn_save_index(root.clone(), app.scan_root.clone());
+            }
+        }
+        Message::SaveIndexCompleted(Ok(())) => {
+            app.last_error = None;
+        }
+        Message::SaveIndexCompleted(Err(err)) => {
+            app.last_error = Some(format!("couldn't save index: {err}"));
         }
         Message::Rescan => {
             return app.begin_scan(app.scan_root.clone());

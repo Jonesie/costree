@@ -5,9 +5,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use serde::{Deserialize, Serialize};
+
+/// Name of the folder a scanned root's saved index is stored under. Scans
+/// skip this folder entirely — it's app metadata, not user data to measure.
+pub const INDEX_DIR_NAME: &str = ".costree";
+const INDEX_FILE_NAME: &str = "index.json";
+const INDEX_FORMAT_VERSION: u32 = 1;
 
 /// A single file or directory node in the scanned tree.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
     pub name: String,
     pub path: PathBuf,
@@ -62,6 +71,10 @@ fn entry_name(path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
+fn is_index_dir(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == INDEX_DIR_NAME)
+}
+
 /// Lists only the immediate children of `path`. Files are fully resolved
 /// (their size is cheap to read), but directories are returned unscanned
 /// with size 0 so the caller can render them immediately and scan their
@@ -71,6 +84,7 @@ pub fn list_top_level(path: &Path) -> Entry {
         .map(|read_dir| {
             read_dir
                 .flatten()
+                .filter(|dir_entry| !is_index_dir(&dir_entry.path()))
                 .map(|dir_entry| {
                     let child_path = dir_entry.path();
                     let metadata = fs::symlink_metadata(&child_path);
@@ -150,7 +164,11 @@ pub fn scan(path: &Path, generation: u64) -> Option<Entry> {
     let mut children: Vec<Entry> = Vec::new();
     if let Ok(read_dir) = fs::read_dir(path) {
         for dir_entry in read_dir.flatten() {
-            children.push(scan(&dir_entry.path(), generation)?);
+            let child_path = dir_entry.path();
+            if is_index_dir(&child_path) {
+                continue;
+            }
+            children.push(scan(&child_path, generation)?);
         }
     }
 
@@ -165,6 +183,60 @@ pub fn scan(path: &Path, generation: u64) -> Option<Entry> {
         scanned: true,
         children,
     })
+}
+
+/// An on-disk snapshot of a scan, saved under `<root>/.costree/index.json`
+/// so it can be reloaded later without rescanning.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedIndex {
+    version: u32,
+    /// Unix timestamp (seconds) of when this snapshot was saved.
+    pub scanned_at: u64,
+    pub root: Entry,
+}
+
+/// Current time as a Unix timestamp (seconds), or 0 if the clock is somehow
+/// set before the epoch.
+pub fn now_unix() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Saves `root` under `<dest>/.costree/index.json`. Fails gracefully (no
+/// panics) if `dest` isn't writable — the caller is expected to surface the
+/// error rather than treat it as fatal.
+pub fn save_index(root: &Entry, dest: &Path) -> Result<(), String> {
+    let index_dir = dest.join(INDEX_DIR_NAME);
+    fs::create_dir_all(&index_dir).map_err(|err| err.to_string())?;
+
+    let saved = SavedIndex { version: INDEX_FORMAT_VERSION, scanned_at: now_unix(), root: root.clone() };
+    let json = serde_json::to_string(&saved).map_err(|err| err.to_string())?;
+    fs::write(index_dir.join(INDEX_FILE_NAME), json).map_err(|err| err.to_string())
+}
+
+/// Loads a previously saved index for `root`, if one exists and matches the
+/// current format version. Returns `None` (not an error) for any failure —
+/// missing/unreadable/corrupt/outdated saves should just fall back to a
+/// fresh scan rather than blocking the user with an error.
+pub fn load_index(root: &Path) -> Option<SavedIndex> {
+    let path = root.join(INDEX_DIR_NAME).join(INDEX_FILE_NAME);
+    let data = fs::read_to_string(path).ok()?;
+    let saved: SavedIndex = serde_json::from_str(&data).ok()?;
+    (saved.version == INDEX_FORMAT_VERSION).then_some(saved)
+}
+
+/// Formats a Unix timestamp as a short relative string, e.g. `"12m ago"`.
+pub fn format_relative_time(timestamp: u64) -> String {
+    let elapsed = now_unix().saturating_sub(timestamp);
+
+    if elapsed < 60 {
+        "just now".to_string()
+    } else if elapsed < 3600 {
+        format!("{}m ago", elapsed / 60)
+    } else if elapsed < 86400 {
+        format!("{}h ago", elapsed / 3600)
+    } else {
+        format!("{}d ago", elapsed / 86400)
+    }
 }
 
 /// Finds the entry at `target` anywhere in the tree rooted at `node`.
@@ -560,5 +632,71 @@ mod tests {
         next_generation(); // supersede it
 
         assert!(scan(dir.path(), stale_generation).is_none());
+    }
+
+    #[test]
+    fn save_and_load_index_round_trips() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let child = entry("b", "/a/b", 10, false, vec![]);
+        let root = entry("a", "/a", 10, true, vec![child]);
+
+        save_index(&root, dir.path()).expect("save should succeed");
+
+        let loaded = load_index(dir.path()).expect("load should find the saved index");
+        assert_eq!(loaded.root.name, "a");
+        assert_eq!(loaded.root.children[0].name, "b");
+        assert_eq!(loaded.root.children[0].size, 10);
+    }
+
+    #[test]
+    fn load_index_returns_none_when_absent() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        assert!(load_index(dir.path()).is_none());
+    }
+
+    #[test]
+    fn save_index_fails_gracefully_on_unwritable_destination() {
+        let root = entry("a", "/a", 0, true, vec![]);
+        // A path that can't exist as a writable directory.
+        let dest = Path::new("/dev/null/costree-test-should-not-exist");
+        assert!(save_index(&root, dest).is_err());
+    }
+
+    #[test]
+    fn format_relative_time_buckets_correctly() {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        assert_eq!(format_relative_time(now), "just now");
+        assert_eq!(format_relative_time(now - 120), "2m ago");
+        assert_eq!(format_relative_time(now - 7200), "2h ago");
+        assert_eq!(format_relative_time(now - 172_800), "2d ago");
+    }
+
+    #[test]
+    fn scan_skips_the_index_directory() {
+        let _guard = GENERATION_TEST_LOCK.lock().unwrap();
+
+        let dir = tempfile::tempdir().expect("create temp dir");
+        fs::write(dir.path().join("file.txt"), b"hi").expect("write file");
+        fs::create_dir(dir.path().join(INDEX_DIR_NAME)).expect("create index dir");
+        fs::write(dir.path().join(INDEX_DIR_NAME).join("index.json"), b"{}")
+            .expect("write index file");
+
+        let generation = next_generation();
+        let scanned = scan(dir.path(), generation).expect("scan should not be cancelled");
+
+        assert_eq!(scanned.children.len(), 1);
+        assert_eq!(scanned.children[0].name, "file.txt");
+    }
+
+    #[test]
+    fn list_top_level_skips_the_index_directory() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        fs::write(dir.path().join("file.txt"), b"hi").expect("write file");
+        fs::create_dir(dir.path().join(INDEX_DIR_NAME)).expect("create index dir");
+
+        let listed = list_top_level(dir.path());
+
+        assert_eq!(listed.children.len(), 1);
+        assert_eq!(listed.children[0].name, "file.txt");
     }
 }

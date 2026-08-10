@@ -62,6 +62,32 @@ pub(super) fn spawn_top_level_listing(root: PathBuf) -> Task<cosmic::Action<Mess
     )
 }
 
+/// Checks `<root>/.costree/` for a saved index before deciding how to begin
+/// a scan. Runs on a blocking thread even though a single failed/missing
+/// file read is cheap, for consistency with how every other filesystem
+/// operation in this module avoids the GUI thread.
+pub(super) fn spawn_check_saved_index(root: PathBuf) -> Task<cosmic::Action<Message>> {
+    Task::perform(
+        async move {
+            tokio::task::spawn_blocking(move || scanner::load_index(&root))
+                .await
+                .expect("load task panicked")
+        },
+        |saved| cosmic::Action::App(Message::SavedIndexChecked(saved)),
+    )
+}
+
+pub(super) fn spawn_save_index(root_entry: scanner::Entry, dest: PathBuf) -> Task<cosmic::Action<Message>> {
+    Task::perform(
+        async move {
+            tokio::task::spawn_blocking(move || scanner::save_index(&root_entry, &dest))
+                .await
+                .expect("save task panicked")
+        },
+        |result| cosmic::Action::App(Message::SaveIndexCompleted(result)),
+    )
+}
+
 pub(super) fn spawn_branch_scan(path: PathBuf, generation: u64) -> Task<cosmic::Action<Message>> {
     Task::perform(
         async move {

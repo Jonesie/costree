@@ -30,6 +30,7 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
         .is_some_and(|p| *p != app.scan_root);
 
     let scanning = app.listing || app.pending_branches > 0;
+    let can_save = app.root.is_some() && !scanning;
 
     let quick_root_labels: Vec<String> =
         app.quick_roots.iter().map(|(label, _)| label.clone()).collect();
@@ -84,6 +85,11 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
             "view-refresh-symbolic",
             "Refresh (F5)",
             Some(Message::Rescan),
+        ))
+        .push(toolbar_button(
+            "document-save-symbolic",
+            "Save index to .costree",
+            can_save.then_some(Message::SaveIndex),
         ))
         .push(toolbar_button(
             "user-trash-symbolic",
@@ -195,7 +201,10 @@ pub(super) fn footer(app: &AppModel) -> Option<Element<'_, Message>> {
             |p| format!("Scanning {}", p.display()),
         )
     } else {
-        "Idle".to_string()
+        app.last_scan_time.map_or_else(
+            || "Idle".to_string(),
+            |t| format!("Scanned {}", scanner::format_relative_time(t)),
+        )
     };
 
     let mut row = widget::row::with_capacity(3)

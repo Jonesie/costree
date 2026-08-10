@@ -64,6 +64,10 @@ pub struct AppModel {
     /// Handle to the on-disk config, used to persist settings like
     /// `hide_dotfiles` between runs. `None` if it couldn't be opened.
     config_handle: Option<cosmic::cosmic_config::Config>,
+    /// When the data currently displayed was scanned — either just now, or
+    /// whenever a loaded `.costree` save was originally made. `None` while
+    /// nothing has finished scanning/loading yet.
+    last_scan_time: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +102,12 @@ pub enum Message {
     RenameConfirmed,
     RenameCancelled,
     RenameCompleted(PathBuf, PathBuf, Result<(), String>),
+    SaveIndex,
+    SaveIndexCompleted(Result<(), String>),
+    /// Result of checking `<root>/.costree/` for a saved index when
+    /// beginning a scan. `Some` loads it directly instead of scanning;
+    /// `None` falls through to a normal fresh scan.
+    SavedIndexChecked(Option<scanner::SavedIndex>),
     /// Plumbing required for context menus to open as native popups
     /// (correctly positioned at the cursor) instead of a slow in-window
     /// overlay fallback.
@@ -124,7 +134,8 @@ impl AppModel {
         Arc::make_mut(&mut self.search_index).clear();
         self.search_results = None;
         self.searching = false;
-        tasks::spawn_top_level_listing(root)
+        self.last_scan_time = None;
+        tasks::spawn_check_saved_index(root)
     }
 
     /// Cancels any scan in flight; already-scanned branches keep their data.
@@ -191,6 +202,7 @@ impl cosmic::Application for AppModel {
             generation: 0,
             rename_target: None,
             config_handle,
+            last_scan_time: None,
         };
 
         app.core_mut().set_header_title(APP_TITLE.to_string());
