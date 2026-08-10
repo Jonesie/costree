@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786374178312,
+  "lastUpdate": 1786374973028,
   "repoUrl": "https://github.com/Jonesie/costree",
   "entries": {
     "Benchmark": [
@@ -59,6 +59,36 @@ window.BENCHMARK_DATA = {
             "name": "scan_synthetic_tree",
             "value": 1186830,
             "range": "± 47229",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "peter@jonesie.net.nz",
+            "name": "Jonesie",
+            "username": "Jonesie"
+          },
+          "committer": {
+            "email": "peter@jonesie.net.nz",
+            "name": "Jonesie",
+            "username": "Jonesie"
+          },
+          "distinct": true,
+          "id": "785c321957d187e751f1081f465ddac1221190e1",
+          "message": "Add Buy Me A Coffee link to README (#17)\n\nSame format used in the Michael repo: an Author section with the\nbuymeacoffee.com/jonesie link and badge image, placed before License.",
+          "timestamp": "2026-08-11T03:14:00+12:00",
+          "tree_id": "c72b2cdbdfc06fd8af966954c1f9bb10132abfdc",
+          "url": "https://github.com/Jonesie/costree/commit/785c321957d187e751f1081f465ddac1221190e1"
+        },
+        "date": 1786374971980,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "scan_synthetic_tree",
+            "value": 1449858,
+            "range": "± 51888",
             "unit": "ns/iter"
           }
         ]
