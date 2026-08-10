@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786373351569,
+  "lastUpdate": 1786374178312,
   "repoUrl": "https://github.com/Jonesie/costree",
   "entries": {
     "Benchmark": [
@@ -29,6 +29,36 @@ window.BENCHMARK_DATA = {
             "name": "scan_synthetic_tree",
             "value": 1512727,
             "range": "± 59507",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "peter@jonesie.net.nz",
+            "name": "Jonesie",
+            "username": "Jonesie"
+          },
+          "committer": {
+            "email": "peter@jonesie.net.nz",
+            "name": "Jonesie",
+            "username": "Jonesie"
+          },
+          "distinct": true,
+          "id": "079ab65d7e1df1ebf99d570293739bacf99c36fb",
+          "message": "README: add a Performance section with the benchmark dashboard link\n\nDocuments the rayon-parallel scanning, how to run the criterion\nbenchmark locally, and links to the CI-tracked benchmark history\ndashboard (dev/bench/, not the Pages root, which has no index.html).",
+          "timestamp": "2026-08-11T03:00:31+12:00",
+          "tree_id": "4a97cb57fd40842eb3349f9d85fcc548bd5af9c1",
+          "url": "https://github.com/Jonesie/costree/commit/079ab65d7e1df1ebf99d570293739bacf99c36fb"
+        },
+        "date": 1786374177355,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "scan_synthetic_tree",
+            "value": 1186830,
+            "range": "± 47229",
             "unit": "ns/iter"
           }
         ]
