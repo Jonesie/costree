@@ -28,6 +28,11 @@ jobs:
         with:
           tool: cargo-deb
 
+      - name: Set version from release tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          sed -i "0,/^version = /s/^version = \".*\"/version = \"$version\"/" Cargo.toml
+
       - name: Build release binary
         run: cargo build --release --verbose
 

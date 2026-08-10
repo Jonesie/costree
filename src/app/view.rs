@@ -248,7 +248,7 @@ pub(super) fn footer(app: &AppModel) -> Option<Element<'_, Message>> {
         )
     };
 
-    let mut row = widget::row::with_capacity(4)
+    let mut row = widget::row::with_capacity(5)
         .push(widget::text::caption(format!("{percent}%")))
         .push(widget::text::caption(operation).width(Length::Fill))
         .align_y(Alignment::Center)
@@ -265,6 +265,8 @@ pub(super) fn footer(app: &AppModel) -> Option<Element<'_, Message>> {
     if let Some(err) = &app.last_error {
         row = row.push(widget::text::caption(format!("Error: {err}")));
     }
+
+    row = row.push(widget::text::caption(format!("v{}", crate::VERSION)));
 
     Some(
         widget::container(row)
