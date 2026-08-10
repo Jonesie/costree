@@ -13,6 +13,11 @@ use super::{AppModel, Message};
 
 const MUTED_TEXT: cosmic::iced::Color = cosmic::iced::Color::from_rgb(0.5, 0.5, 0.5);
 
+/// The app icon, embedded so the faint window watermark below works from an
+/// installed `.deb` too — a relative path to `packaging/` would only
+/// resolve when run from inside the source tree.
+const APP_ICON_SVG: &[u8] = include_bytes!("../../packaging/icons/net.jonesie.Costree.svg");
+
 /// While searching, every matching branch is force-expanded so results are
 /// visible without manual clicking. A broad query (even a single common
 /// letter) on a huge tree can match a large fraction of it, which without a
@@ -199,12 +204,24 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
         .height(Length::Fill)
         .width(Length::Fill);
 
-    widget::column::with_capacity(2)
+    let content = widget::column::with_capacity(2)
         .push(toolbar)
         .push(body)
         .height(Length::Fill)
-        .width(Length::Fill)
-        .into()
+        .width(Length::Fill);
+
+    // A faint copy of the app icon behind the content, per issue #11 — the
+    // toolbar's own Card background sits on top of it, so it only shows
+    // through the tree/body area below.
+    let watermark = widget::container(
+        cosmic::iced::widget::svg(cosmic::iced::widget::svg::Handle::from_memory(APP_ICON_SVG))
+            .width(Length::Fixed(360.0))
+            .height(Length::Fixed(360.0))
+            .opacity(0.06_f32),
+    )
+    .center(Length::Fill);
+
+    cosmic::iced::widget::stack![watermark, content].into()
 }
 
 pub(super) fn footer(app: &AppModel) -> Option<Element<'_, Message>> {
