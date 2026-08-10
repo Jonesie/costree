@@ -63,6 +63,18 @@ CosTree scans your home directory on startup.
 - **Hide dotfiles** — the checkbox in the toolbar; this preference is remembered between runs.
 - **Save index** — once a scan finishes, click the save icon to write it to `.costree/` under the scanned directory. Next time you scan that same root, CosTree loads the saved index instantly instead of rescanning from disk.
 
+## Performance
+
+Directory scanning parallelizes across every core via [rayon](https://github.com/rayon-rs/rayon) — the whole tree is walked concurrently at every level, not just across top-level branches, so scan speed scales with the machine rather than with how many top-level directories the scan root happens to have.
+
+A [criterion](https://github.com/bheisler/criterion.rs) benchmark (`benches/scan_benchmark.rs`) exercises the scanner against a synthetic directory tree. Run it locally with:
+
+```bash
+cargo bench
+```
+
+CI runs the same benchmark on every push to `main` and tracks results over time — see the [benchmark history dashboard](https://jonesie.github.io/costree/dev/bench/).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
