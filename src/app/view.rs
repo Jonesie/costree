@@ -13,6 +13,23 @@ use super::{AppModel, Message};
 
 const MUTED_TEXT: cosmic::iced::Color = cosmic::iced::Color::from_rgb(0.5, 0.5, 0.5);
 
+/// Braille spin-cycle glyphs for the loading/listing indicator, advanced one
+/// frame per `Tick` (see `subscription::subscription`).
+const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+fn spinner_frame(tick: u64) -> &'static str {
+    SPINNER_FRAMES[(tick as usize) % SPINNER_FRAMES.len()]
+}
+
+/// Progress message shown while `listing` is true and no tree has appeared
+/// yet — distinguishes loading a `.costree` save from an actual directory
+/// listing, since the former is normally near-instant and the latter can
+/// take a while on a big tree.
+fn listing_message(app: &AppModel) -> String {
+    let label = if app.loading_saved_index { "Loading saved index…" } else { "Listing directory…" };
+    format!("{} {label}", spinner_frame(app.tick_count))
+}
+
 /// The app icon, embedded so the faint window watermark below works from an
 /// installed `.deb` too — a relative path to `packaging/` would only
 /// resolve when run from inside the source tree.
@@ -154,7 +171,7 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
     .class(cosmic::theme::Container::Card);
 
     let body: Element<_> = if app.listing && app.root.is_none() {
-        widget::container(widget::text::body("Listing directory…"))
+        widget::container(widget::text::body(listing_message(app)))
             .center(Length::Fill)
             .into()
     } else if let Some(root) = &app.root {
@@ -235,7 +252,7 @@ pub(super) fn footer(app: &AppModel) -> Option<Element<'_, Message>> {
     };
 
     let operation = if app.listing {
-        "Listing directory…".to_string()
+        listing_message(app)
     } else if app.pending_branches > 0 {
         scanner::current_scan_path().map_or_else(
             || "Scanning…".to_string(),

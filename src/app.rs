@@ -83,6 +83,12 @@ pub struct AppModel {
     /// disk usage is most likely to have changed as a direct result of
     /// using costree. `None` if it hasn't been read yet or the syscall failed.
     disk_space: Option<scanner::DiskSpace>,
+    /// True while `begin_scan` is waiting on the `.costree` saved-index
+    /// check — distinguishes "loading a save" from an ordinary fresh
+    /// listing so the progress message can say which one is happening.
+    loading_saved_index: bool,
+    /// Bumped on every `Tick`, purely to drive the loading spinner frame.
+    tick_count: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -134,15 +140,18 @@ pub enum Message {
 }
 
 impl AppModel {
-    /// Resets scan-related state and kicks off a fresh top-level listing of `root`.
-    fn begin_scan(&mut self, root: PathBuf) -> Task<cosmic::Action<Message>> {
+    /// Resets scan-related state ahead of either a fresh listing or a saved
+    /// index load. Shared by `begin_scan` and `force_rescan`, which differ
+    /// only in what they kick off afterward.
+    fn reset_for_scan(&mut self, root: PathBuf) {
         self.generation = scanner::next_generation();
         self.scan_root = root.clone();
         self.root_input = root.to_string_lossy().into_owned();
         self.title_editing = false;
         self.expanded.clear();
-        self.expanded.insert(root.clone());
+        self.expanded.insert(root);
         self.listing = true;
+        self.loading_saved_index = false;
         self.pending_branches = 0;
         self.total_branches = 0;
         self.root = None;
@@ -155,7 +164,25 @@ impl AppModel {
         self.searching = false;
         self.last_scan_time = None;
         self.saving_index = false;
+    }
+
+    /// Resets scan-related state and checks `<root>/.costree/` for a saved
+    /// index before deciding how to begin — used whenever a new root is set
+    /// (startup, quick-pick, folder dialog, or the title's path field),
+    /// where a still-fresh save is preferable to redoing the work.
+    fn begin_scan(&mut self, root: PathBuf) -> Task<cosmic::Action<Message>> {
+        self.reset_for_scan(root.clone());
+        self.loading_saved_index = true;
         Task::batch([tasks::spawn_check_saved_index(root.clone()), tasks::spawn_disk_space(root)])
+    }
+
+    /// Resets scan-related state and forces a real rescan of `root`,
+    /// discarding any saved `.costree` index first — used for the explicit
+    /// Refresh action, where the user wants current-truth data rather than
+    /// whatever was last saved (which `begin_scan` would otherwise reload).
+    fn force_rescan(&mut self, root: PathBuf) -> Task<cosmic::Action<Message>> {
+        self.reset_for_scan(root.clone());
+        Task::batch([tasks::spawn_force_rescan(root.clone()), tasks::spawn_disk_space(root)])
     }
 
     fn search_options(&self) -> scanner::SearchOptions {
@@ -257,6 +284,8 @@ impl cosmic::Application for AppModel {
             last_scan_time: None,
             saving_index: false,
             disk_space: None,
+            loading_saved_index: false,
+            tick_count: 0,
         };
 
         app.core_mut().set_header_title(APP_TITLE.to_string());

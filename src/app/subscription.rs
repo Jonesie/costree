@@ -12,7 +12,7 @@ use super::{AppModel, Message};
 pub(super) fn subscription(app: &AppModel) -> Subscription<Message> {
     let mut subscriptions = vec![cosmic::iced::event::listen_with(key_event_to_message)];
 
-    if app.pending_branches > 0 {
+    if app.pending_branches > 0 || app.listing {
         subscriptions.push(Subscription::run(|| {
             cosmic::iced::stream::channel(1, |mut emitter: futures::channel::mpsc::Sender<_>| async move {
                 let mut interval = tokio::time::interval(Duration::from_millis(150));

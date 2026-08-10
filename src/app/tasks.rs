@@ -105,6 +105,25 @@ pub(super) fn spawn_check_saved_index(root: PathBuf) -> Task<cosmic::Action<Mess
     )
 }
 
+/// Discards any saved `.costree` index for `root` and lists it fresh —
+/// used for the explicit Refresh action, where the user wants current-truth
+/// data rather than whatever was last saved. Deleting and listing happen on
+/// the same blocking thread so a refresh can't race a save landing between
+/// the two steps.
+pub(super) fn spawn_force_rescan(root: PathBuf) -> Task<cosmic::Action<Message>> {
+    Task::perform(
+        async move {
+            tokio::task::spawn_blocking(move || {
+                scanner::delete_saved_index(&root);
+                scanner::list_top_level(&root)
+            })
+            .await
+            .expect("force rescan task panicked")
+        },
+        |entry| cosmic::Action::App(Message::TopLevelListed(entry)),
+    )
+}
+
 pub(super) fn spawn_save_index(root_entry: scanner::Entry, dest: PathBuf) -> Task<cosmic::Action<Message>> {
     Task::perform(
         async move {

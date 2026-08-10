@@ -66,6 +66,7 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
             app.selected = Some(path);
         }
         Message::SavedIndexChecked(saved) => {
+            app.loading_saved_index = false;
             let Some(saved) = saved else {
                 return tasks::spawn_top_level_listing(app.scan_root.clone());
             };
@@ -92,7 +93,7 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
             app.last_error = Some(format!("couldn't save index: {err}"));
         }
         Message::Rescan => {
-            return app.begin_scan(app.scan_root.clone());
+            return app.force_rescan(app.scan_root.clone());
         }
         Message::CancelScan => {
             app.cancel_scan();
@@ -277,7 +278,9 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
                 cosmic::app::Action::Surface(action),
             ));
         }
-        Message::Tick => {}
+        Message::Tick => {
+            app.tick_count = app.tick_count.wrapping_add(1);
+        }
     }
     Task::none()
 }

@@ -235,6 +235,13 @@ pub fn save_index(root: &Entry, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Deletes `<root>/.costree/index.bin`, if present, so a forced rescan
+/// can't turn around and reload the very save it's meant to replace. A
+/// missing file isn't an error — there may never have been a saved index.
+pub fn delete_saved_index(root: &Path) {
+    let _ = fs::remove_file(root.join(INDEX_DIR_NAME).join(INDEX_FILE_NAME));
+}
+
 /// Loads a previously saved index for `root`, if one exists and matches the
 /// current format version. Returns `None` (not an error) for any failure —
 /// missing/unreadable/corrupt/outdated saves should just fall back to a
