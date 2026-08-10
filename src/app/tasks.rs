@@ -10,13 +10,16 @@ use crate::scanner;
 
 use super::Message;
 
-/// Caps how many top-level directories get scanned concurrently. A large
-/// home directory can easily have 100+ top-level entries; firing a blocking
-/// OS thread for every single one at once (even on many cores) saturates
-/// CPU and disk I/O badly enough to starve the GUI thread and make the
-/// window appear frozen. Small and fixed rather than core-count-scaled,
-/// since UI responsiveness matters more here than raw scan throughput.
-static SCAN_CONCURRENCY: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(4));
+/// Caps how many top-level directories get dispatched to `spawn_blocking`
+/// concurrently. Each dispatched branch now parallelizes its own recursive
+/// walk internally via rayon's shared, core-bounded thread pool (see
+/// `scanner::scan`), so real I/O/CPU concurrency is already capped by
+/// hardware regardless of how many branches are in flight — this limit is
+/// just to stop a home directory with 100+ top-level entries from spinning
+/// up 100+ mostly-idle blocking OS threads at once.
+static SCAN_CONCURRENCY: LazyLock<Semaphore> = LazyLock::new(|| {
+    Semaphore::new(std::thread::available_parallelism().map(std::num::NonZero::get).unwrap_or(4))
+});
 
 /// How long typing has to pause before a search actually runs.
 const SEARCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(150);

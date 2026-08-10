@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rayon::prelude::*;
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 
@@ -164,16 +165,28 @@ pub fn scan(path: &Path, generation: u64) -> Option<Entry> {
         });
     }
 
-    let mut children: Vec<Entry> = Vec::new();
-    if let Ok(read_dir) = fs::read_dir(path) {
-        for dir_entry in read_dir.flatten() {
-            let child_path = dir_entry.path();
-            if is_index_dir(&child_path) {
-                continue;
-            }
-            children.push(scan(&child_path, generation)?);
+    // Recurses into children in parallel via rayon's work-stealing pool
+    // (shared and bounded to available cores, so this scales across a whole
+    // scan without the thread-explosion risk of spawning an OS thread per
+    // directory) — stat-heavy directory walks are latency-bound on I/O, so
+    // more concurrent readers finish a tree far faster than walking it
+    // single-threaded. `collect::<Option<Vec<_>>>()` short-circuits to
+    // `None` the same way the old sequential `?`-per-child loop did if the
+    // generation goes stale partway through.
+    let mut children: Vec<Entry> = match fs::read_dir(path) {
+        Ok(read_dir) => {
+            let child_paths: Vec<PathBuf> = read_dir
+                .flatten()
+                .map(|dir_entry| dir_entry.path())
+                .filter(|child_path| !is_index_dir(child_path))
+                .collect();
+            child_paths
+                .par_iter()
+                .map(|child_path| scan(child_path, generation))
+                .collect::<Option<Vec<_>>>()?
         }
-    }
+        Err(_) => Vec::new(),
+    };
 
     children.sort_by(|a, b| b.size.cmp(&a.size));
     let size = children.iter().map(|c| c.size).sum();

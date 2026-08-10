@@ -45,3 +45,23 @@ jobs:
           path: target/nextest/ci/junit.xml
           reporter: java-junit
           fail-on-error: true
+
+      - name: Run benchmark
+        run: cargo bench --bench scan_benchmark | tee bench-output.txt
+
+      - name: Add benchmark summary
+        if: always()
+        run: |
+          {
+            echo "## Benchmark: scan_synthetic_tree"
+            echo '```'
+            cat bench-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload criterion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-report
+          path: target/criterion

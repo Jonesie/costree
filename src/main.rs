@@ -1,13 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-mod app;
-mod config;
-mod scanner;
-
-/// Set from the `version` field in `Cargo.toml` at compile time, which the
-/// release workflow rewrites to match the pushed tag before building — see
-/// `.github/workflows/release.yml`.
-pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
+use costree::{VERSION, app};
 
 fn main() -> cosmic::iced::Result {
     if std::env::args().any(|arg| arg == "--version" || arg == "-V") {
