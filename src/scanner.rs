@@ -401,24 +401,54 @@ pub fn reindex_prefix(index: &mut SearchIndex, old_prefix: &Path, new_prefix: &P
     }
 }
 
+/// Caps how many entries `search_index()` will build a result for. A broad
+/// query (even a single common letter) on a huge tree can match a large
+/// fraction of it; without this, the tree view's own row cap only limits
+/// *rendering*, but `search_index()` would still do the full ancestor-walk
+/// for every match — the actual bottleneck for a broad query (measured:
+/// ~300ms building the full result for a 500k-entry match, vs. ~4.4ms for
+/// the matching pass itself) — for a result the view was always going to
+/// truncate anyway.
+pub const MAX_SEARCH_RESULTS: usize = 1000;
+
 /// Returns the paths of every indexed entry whose name matches `pattern`,
 /// plus every ancestor of a match — i.e. exactly the set of entries a
-/// search-filtered tree view should keep.
+/// search-filtered tree view should keep. Stops once the result reaches
+/// `max_results` entries — the view only ever renders that many rows
+/// anyway (see `MAX_SEARCH_RESULTS`), so there's no point paying for the
+/// ancestor-walk on matches that would just get discarded at render time.
+///
+/// Two passes: matching runs over rayon's shared thread pool (the same one
+/// `scan()` uses), since regex matching every entry in a huge flat index is
+/// cheap in absolute terms but still the only part of this that scales with
+/// the *whole* index rather than just the match count, and it's
+/// embarrassingly parallel — each entry is checked independently. The
+/// ancestor-walk over the matches can't be parallelized the same way (it
+/// mutates one shared `HashSet`, and later matches route through the
+/// buildup left by earlier ones), but it's bounded by `max_results` and by
+/// how much of the index actually matched, whichever is smaller.
 ///
 /// Once an ancestor has been recorded by an earlier match, every path
 /// above it must already be recorded too, so walking stops as soon as it
 /// hits one — this keeps the total ancestor-walking work bounded across
 /// the whole index rather than repeating it per match.
-pub fn search_index(index: &SearchIndex, pattern: &Regex) -> HashSet<PathBuf> {
+pub fn search_index(index: &SearchIndex, pattern: &Regex, max_results: usize) -> HashSet<PathBuf> {
+    let matched_paths: Vec<&PathBuf> = index
+        .par_iter()
+        .filter(|(_, name)| pattern.is_match(name))
+        .map(|(path, _)| path)
+        .collect();
+
     let mut matches = HashSet::new();
-    for (path, name) in index {
-        if !pattern.is_match(name) {
-            continue;
+    for path in matched_paths {
+        if matches.len() >= max_results {
+            break;
         }
         for ancestor in path.ancestors() {
-            if !matches.insert(ancestor.to_path_buf()) {
+            if matches.contains(ancestor) {
                 break;
             }
+            matches.insert(ancestor.to_path_buf());
         }
     }
     matches
@@ -644,7 +674,7 @@ mod tests {
 
         let mut index = SearchIndex::new();
         index_subtree(&root, &mut index);
-        let matches = search_index(&index, &regex("target", SearchOptions::default()));
+        let matches = search_index(&index, &regex("target", SearchOptions::default()), usize::MAX);
 
         assert!(matches.contains(Path::new("/a/b/target.txt")));
         assert!(matches.contains(Path::new("/a/b"))); // ancestor of a match
@@ -660,7 +690,24 @@ mod tests {
         let mut index = SearchIndex::new();
         index_subtree(&root, &mut index);
 
-        assert!(search_index(&index, &regex("nope", SearchOptions::default())).is_empty());
+        assert!(search_index(&index, &regex("nope", SearchOptions::default()), usize::MAX).is_empty());
+    }
+
+    #[test]
+    fn search_index_stops_early_once_max_results_is_reached() {
+        let children: Vec<Entry> =
+            (0..20).map(|i| entry(&format!("match{i}.txt"), &format!("/a/match{i}.txt"), 1, false, vec![])).collect();
+        let root = entry("a", "/a", 20, true, children);
+
+        let mut index = SearchIndex::new();
+        index_subtree(&root, &mut index);
+
+        let unbounded = search_index(&index, &regex("match", SearchOptions::default()), usize::MAX);
+        assert_eq!(unbounded.len(), 22); // 20 matches + their shared ancestors "/a" and "/"
+
+        let capped = search_index(&index, &regex("match", SearchOptions::default()), 5);
+        assert_eq!(capped.len(), 5);
+        assert!(capped.len() < unbounded.len());
     }
 
     #[test]
@@ -671,13 +718,13 @@ mod tests {
         let mut index = SearchIndex::new();
         index_subtree(&root, &mut index);
 
-        assert!(search_index(&index, &regex("target", SearchOptions::default()))
+        assert!(search_index(&index, &regex("target", SearchOptions::default()), usize::MAX)
             .contains(Path::new("/a/Target.txt")));
 
         let case_sensitive = SearchOptions { case_sensitive: true, ..Default::default() };
-        assert!(!search_index(&index, &regex("target", case_sensitive))
+        assert!(!search_index(&index, &regex("target", case_sensitive), usize::MAX)
             .contains(Path::new("/a/Target.txt")));
-        assert!(search_index(&index, &regex("Target", case_sensitive))
+        assert!(search_index(&index, &regex("Target", case_sensitive), usize::MAX)
             .contains(Path::new("/a/Target.txt")));
     }
 
@@ -690,8 +737,8 @@ mod tests {
         index_subtree(&root, &mut index);
 
         let whole_word = SearchOptions { whole_word: true, ..Default::default() };
-        assert!(search_index(&index, &regex("target", whole_word)).contains(Path::new("/a/target.txt")));
-        assert!(search_index(&index, &regex("targe", whole_word)).is_empty());
+        assert!(search_index(&index, &regex("target", whole_word), usize::MAX).contains(Path::new("/a/target.txt")));
+        assert!(search_index(&index, &regex("targe", whole_word), usize::MAX).is_empty());
     }
 
     #[test]
@@ -703,7 +750,7 @@ mod tests {
         let mut index = SearchIndex::new();
         index_subtree(&root, &mut index);
 
-        let matches = search_index(&index, &regex("a.b", SearchOptions::default()));
+        let matches = search_index(&index, &regex("a.b", SearchOptions::default()), usize::MAX);
         assert!(matches.contains(Path::new("/a.b")));
         assert!(!matches.contains(Path::new("/axb")));
     }
@@ -718,7 +765,7 @@ mod tests {
         index_subtree(&root, &mut index);
 
         let regex_on = SearchOptions { regex: true, ..Default::default() };
-        let matches = search_index(&index, &regex("a.b", regex_on));
+        let matches = search_index(&index, &regex("a.b", regex_on), usize::MAX);
         assert!(matches.contains(Path::new("/a.b")));
         assert!(matches.contains(Path::new("/axb")));
     }

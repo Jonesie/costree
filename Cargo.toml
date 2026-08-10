@@ -36,6 +36,10 @@ criterion = { version = "0.8", features = ["html_reports"] }
 name = "scan_benchmark"
 harness = false
 
+[[bench]]
+name = "search_benchmark"
+harness = false
+
 [package.metadata.deb]
 maintainer = "Jonesie <peter@jonesie.net.nz>"
 copyright = "2026, Jonesie"

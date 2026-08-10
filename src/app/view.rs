@@ -35,14 +35,6 @@ fn listing_message(app: &AppModel) -> String {
 /// resolve when run from inside the source tree.
 const APP_ICON_SVG: &[u8] = include_bytes!("../../packaging/icons/net.jonesie.Costree.svg");
 
-/// While searching, every matching branch is force-expanded so results are
-/// visible without manual clicking. A broad query (even a single common
-/// letter) on a huge tree can match a large fraction of it, which without a
-/// cap would try to build hundreds of thousands of widget rows in one
-/// synchronous render and hang the whole UI. This bounds that regardless of
-/// how many entries actually match.
-const MAX_SEARCH_RESULTS: usize = 1000;
-
 pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
     let spacing = cosmic::theme::spacing();
 
@@ -155,7 +147,10 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
             app.search_whole_word,
             Message::SearchWholeWordToggled,
         ))
-        .push_maybe(app.searching.then(|| widget::text::caption("Searching…")))
+        .push_maybe(
+            app.searching
+                .then(|| widget::text::caption(format!("{} Searching…", spinner_frame(app.tick_count)))),
+        )
         .push_maybe(app.saving_index.then(|| widget::text::caption("Saving…")))
         .align_y(Alignment::Center)
         .spacing(spacing.space_s);
@@ -411,7 +406,7 @@ fn render_entry<'a>(
         if !matches.contains(&entry.path) {
             return;
         }
-        if rows.len() >= MAX_SEARCH_RESULTS {
+        if rows.len() >= scanner::MAX_SEARCH_RESULTS {
             return;
         }
     }

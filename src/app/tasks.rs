@@ -53,7 +53,7 @@ pub(super) fn spawn_search(
         async move {
             let results = tokio::task::spawn_blocking(move || {
                 scanner::compile_search_regex(&query, options)
-                    .map(|pattern| scanner::search_index(&index, &pattern))
+                    .map(|pattern| scanner::search_index(&index, &pattern, scanner::MAX_SEARCH_RESULTS))
                     .unwrap_or_default()
             })
             .await
