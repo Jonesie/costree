@@ -74,6 +74,9 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
             scanner::index_subtree(&saved.root, Arc::make_mut(&mut app.search_index));
             app.root = Some(saved.root);
         }
+        Message::DiskSpaceChecked(space) => {
+            app.disk_space = space;
+        }
         Message::SaveIndex => {
             if let Some(root) = &app.root {
                 app.saving_index = true;
@@ -212,6 +215,7 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
             }
             app.expanded.remove(&path);
             app.last_error = None;
+            return tasks::spawn_disk_space(app.scan_root.clone());
         }
         Message::DeleteCompleted(path, Err(err)) => {
             app.last_error = Some(format!("couldn't delete {}: {err}", path.display()));

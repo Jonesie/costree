@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 
 use std::collections::HashSet;
+use std::ffi::CString;
 use std::fs;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex};
@@ -425,6 +427,37 @@ pub fn detect_roots(home: &Path) -> Vec<(String, PathBuf)> {
     roots
 }
 
+/// Free/total space (in bytes) for the filesystem containing a path.
+#[derive(Debug, Clone, Copy)]
+pub struct DiskSpace {
+    pub total: u64,
+    pub free: u64,
+}
+
+/// Reads free/total space for the filesystem containing `path`, via
+/// `statvfs(3)`. `statvfs` reports on the filesystem containing whatever
+/// path is passed to it, not just its mount point, so there's no need to
+/// separately resolve which mount `path` lives on the way
+/// `detect_roots()` has to. Returns `None` if the syscall fails (e.g. the
+/// path no longer exists) — this is a status readout, not something that
+/// should ever surface as an error to the user.
+pub fn disk_space(path: &Path) -> Option<DiskSpace> {
+    let c_path = CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) } != 0 {
+        return None;
+    }
+
+    let block_size = stat.f_frsize as u64;
+    Some(DiskSpace {
+        total: stat.f_blocks as u64 * block_size,
+        // f_bavail (blocks available to an unprivileged user) rather than
+        // f_bfree (which includes root-reserved blocks) — matches what a
+        // user would understand "free space" to mean.
+        free: stat.f_bavail as u64 * block_size,
+    })
+}
+
 /// Formats a byte count as a human-readable string, e.g. `4.2 GB`.
 pub fn human_size(bytes: u64) -> String {
     const UNITS: [&str; 6] = ["B", "KB", "MB", "GB", "TB", "PB"];
@@ -470,6 +503,18 @@ mod tests {
         assert_eq!(human_size(1536), "1.5 KB");
         assert_eq!(human_size(1024 * 1024), "1.0 MB");
         assert_eq!(human_size(1024 * 1024 * 1024), "1.0 GB");
+    }
+
+    #[test]
+    fn disk_space_reports_nonzero_totals_for_a_real_path() {
+        let space = disk_space(Path::new("/")).expect("statvfs on / should succeed");
+        assert!(space.total > 0);
+        assert!(space.free <= space.total);
+    }
+
+    #[test]
+    fn disk_space_returns_none_for_a_nonexistent_path() {
+        assert!(disk_space(Path::new("/no/such/path/costree-test")).is_none());
     }
 
     #[test]

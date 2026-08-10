@@ -231,11 +231,19 @@ pub(super) fn footer(app: &AppModel) -> Option<Element<'_, Message>> {
         )
     };
 
-    let mut row = widget::row::with_capacity(3)
+    let mut row = widget::row::with_capacity(4)
         .push(widget::text::caption(format!("{percent}%")))
         .push(widget::text::caption(operation).width(Length::Fill))
         .align_y(Alignment::Center)
         .spacing(spacing.space_s);
+
+    if let Some(space) = &app.disk_space {
+        row = row.push(widget::text::caption(format!(
+            "{} free of {}",
+            scanner::human_size(space.free),
+            scanner::human_size(space.total)
+        )));
+    }
 
     if let Some(err) = &app.last_error {
         row = row.push(widget::text::caption(format!("Error: {err}")));

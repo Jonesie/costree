@@ -16,6 +16,7 @@ serde = { version = "1", features = ["derive"] }
 # https://xkcd.com/2347/) — "2" keeps the resolver from ever landing on it.
 bincode = { version = "2", features = ["serde"] }
 regex = "1"
+libc = "0.2"
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"

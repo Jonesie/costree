@@ -78,6 +78,11 @@ pub struct AppModel {
     /// "Saving…" indicator and disables the Save button so a second save
     /// can't be queued on top of one already running.
     saving_index: bool,
+    /// Free/total space on the filesystem `scan_root` lives on. Refreshed
+    /// when a scan begins and after a successful delete — the two moments
+    /// disk usage is most likely to have changed as a direct result of
+    /// using costree. `None` if it hasn't been read yet or the syscall failed.
+    disk_space: Option<scanner::DiskSpace>,
 }
 
 #[derive(Debug, Clone)]
@@ -121,6 +126,7 @@ pub enum Message {
     /// beginning a scan. `Some` loads it directly instead of scanning;
     /// `None` falls through to a normal fresh scan.
     SavedIndexChecked(Option<scanner::SavedIndex>),
+    DiskSpaceChecked(Option<scanner::DiskSpace>),
     /// Plumbing required for context menus to open as native popups
     /// (correctly positioned at the cursor) instead of a slow in-window
     /// overlay fallback.
@@ -149,7 +155,7 @@ impl AppModel {
         self.searching = false;
         self.last_scan_time = None;
         self.saving_index = false;
-        tasks::spawn_check_saved_index(root)
+        Task::batch([tasks::spawn_check_saved_index(root.clone()), tasks::spawn_disk_space(root)])
     }
 
     fn search_options(&self) -> scanner::SearchOptions {
@@ -250,6 +256,7 @@ impl cosmic::Application for AppModel {
             config_handle,
             last_scan_time: None,
             saving_index: false,
+            disk_space: None,
         };
 
         app.core_mut().set_header_title(APP_TITLE.to_string());

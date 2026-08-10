@@ -1026,6 +1026,7 @@ name = "costree"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "libc",
  "libcosmic",
  "regex",
  "serde",

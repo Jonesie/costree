@@ -61,6 +61,21 @@ pub(super) fn spawn_search(
     )
 }
 
+/// Reads free/total disk space for the filesystem containing `path`.
+/// `statvfs` is a cheap syscall, but it's still a blocking one, so it goes
+/// through `spawn_blocking` for consistency with every other filesystem
+/// operation in this module rather than running inline in `update()`.
+pub(super) fn spawn_disk_space(path: PathBuf) -> Task<cosmic::Action<Message>> {
+    Task::perform(
+        async move {
+            tokio::task::spawn_blocking(move || scanner::disk_space(&path))
+                .await
+                .expect("disk space task panicked")
+        },
+        |space| cosmic::Action::App(Message::DiskSpaceChecked(space)),
+    )
+}
+
 pub(super) fn spawn_top_level_listing(root: PathBuf) -> Task<cosmic::Action<Message>> {
     Task::perform(
         async move {
