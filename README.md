@@ -75,6 +75,14 @@ cargo bench
 
 CI runs the same benchmark on every push to `main` and tracks results over time — see the [benchmark history dashboard](https://jonesie.github.io/costree/dev/bench/).
 
+## Author
+
+Peter G. Jones (New Zealand)
+
+If CosTree is useful to you, you can support ongoing development by buying me a coffee:
+
+<a href="https://buymeacoffee.com/jonesie"><img src="buymecoffee.png" alt="Buy me a coffee" width="100"></a>
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
