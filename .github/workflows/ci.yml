@@ -48,7 +48,14 @@ jobs:
           fail-on-error: true
 
       - name: Run benchmark
-        run: cargo bench --bench scan_benchmark -- --output-format bencher | tee bench-output.txt
+        # target/criterion is wiped first: it can survive from a previous
+        # run via the cargo cache, and criterion's own "compare vs. last
+        # run" logic errors loudly if that leftover baseline is partial —
+        # github-action-benchmark is the real source of cross-run history
+        # now, so criterion doesn't need its own baseline here at all.
+        run: |
+          rm -rf target/criterion
+          cargo bench --bench scan_benchmark -- --output-format bencher | tee bench-output.txt
 
       - name: Track benchmark history
         uses: benchmark-action/github-action-benchmark@v1
