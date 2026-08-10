@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786390702042,
+  "lastUpdate": 1786392384231,
   "repoUrl": "https://github.com/Jonesie/costree",
   "entries": {
     "Benchmark": [
@@ -167,6 +167,54 @@ window.BENCHMARK_DATA = {
             "name": "search_broad_500k_capped",
             "value": 16373184,
             "range": "± 358463",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "peter@jonesie.net.nz",
+            "name": "Jonesie",
+            "username": "Jonesie"
+          },
+          "committer": {
+            "email": "peter@jonesie.net.nz",
+            "name": "Jonesie",
+            "username": "Jonesie"
+          },
+          "distinct": true,
+          "id": "646f4202916eb8eaadcf0eb8d32fd91de333b4ef",
+          "message": "Fix search matches inside dotfiles being silently hidden\n\nBug report: searching \"aws\" found 1 match but showed nothing in the\nlist. Root cause: with \"Hide dotfiles\" on (persisted in the reporter's\nconfig), render_entry() dropped any entry starting with '.' before\never checking whether it was a search match — so a match living under\na dotfile (here, something inside ~/.aws) got counted by\nsearch_index() but never rendered. The only thing that showed was its\nnon-dotfile ancestor, which is what \"found 1 item, nothing in the\nlist\" actually was: 1 ancestor row, 0 match rows.\n\nHide dotfiles now only applies when there's no active search — an\nexplicit search match should never be silently swallowed by an\nunrelated filter. Added a regression test constructing exactly this\nshape (a match inside a dotfile dir) and asserting it renders.",
+          "timestamp": "2026-08-11T08:03:17+12:00",
+          "tree_id": "d9458e41d849e77211e720e385b813ee8e0b4416",
+          "url": "https://github.com/Jonesie/costree/commit/646f4202916eb8eaadcf0eb8d32fd91de333b4ef"
+        },
+        "date": 1786392383714,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "scan_synthetic_tree",
+            "value": 1535958,
+            "range": "± 69216",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_narrow_500k",
+            "value": 19349904,
+            "range": "± 1185821",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_broad_500k_uncapped",
+            "value": 462134252,
+            "range": "± 21021151",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_broad_500k_capped",
+            "value": 18275645,
+            "range": "± 445051",
             "unit": "ns/iter"
           }
         ]
