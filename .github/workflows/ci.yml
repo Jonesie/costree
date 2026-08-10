@@ -9,8 +9,9 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       checks: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
 
@@ -47,17 +48,22 @@ jobs:
           fail-on-error: true
 
       - name: Run benchmark
-        run: cargo bench --bench scan_benchmark | tee bench-output.txt
+        run: cargo bench --bench scan_benchmark -- --output-format bencher | tee bench-output.txt
 
-      - name: Add benchmark summary
-        if: always()
-        run: |
-          {
-            echo "## Benchmark: scan_synthetic_tree"
-            echo '```'
-            cat bench-output.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Track benchmark history
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'cargo'
+          output-file-path: bench-output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Only main's own history is durable — PR runs (including from
+          # forks, which get a read-only token anyway) compare against it
+          # and can comment on a regression, but don't get to rewrite it.
+          auto-push: ${{ github.event_name == 'push' }}
+          comment-on-alert: true
+          alert-threshold: '150%'
+          fail-on-alert: false
+          summary-always: true
 
       - name: Upload criterion report
         if: always()
