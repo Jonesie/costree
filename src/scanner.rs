@@ -249,6 +249,27 @@ pub fn format_relative_time(timestamp: u64) -> String {
     }
 }
 
+/// Shortens an absolute path for display in the status bar, so a deep tree
+/// doesn't wrap (or push everything else off) the status row while
+/// scanning — e.g. `/hdd2/media/backups/2024/photos` becomes
+/// `/hdd2/.../2024/photos/`. Only collapses when doing so actually hides at
+/// least two segments; shallow paths are returned unchanged.
+pub fn shorten_scan_path(path: &Path) -> String {
+    let full = path.display().to_string();
+    let segments: Vec<&str> = full.split('/').filter(|s| !s.is_empty()).collect();
+
+    // Only collapse when doing so actually hides at least two segments —
+    // below that, the shortened form isn't meaningfully shorter than the
+    // original.
+    if segments.len() < 5 {
+        return full;
+    }
+
+    let first = segments[0];
+    let last_two = &segments[segments.len() - 2..];
+    format!("/{first}/.../{}/{}/", last_two[0], last_two[1])
+}
+
 /// Finds the entry at `target` anywhere in the tree rooted at `node`.
 pub fn find_entry<'a>(node: &'a Entry, target: &Path) -> Option<&'a Entry> {
     if node.path == target {
@@ -817,6 +838,24 @@ mod tests {
         assert_eq!(format_relative_time(now - 120), "2m ago");
         assert_eq!(format_relative_time(now - 7200), "2h ago");
         assert_eq!(format_relative_time(now - 172_800), "2d ago");
+    }
+
+    #[test]
+    fn shorten_scan_path_leaves_shallow_paths_untouched() {
+        assert_eq!(shorten_scan_path(Path::new("/hdd2/somefolder1/somefolder2")), "/hdd2/somefolder1/somefolder2");
+        assert_eq!(shorten_scan_path(Path::new("/a/b/c/d")), "/a/b/c/d");
+    }
+
+    #[test]
+    fn shorten_scan_path_collapses_deep_paths() {
+        assert_eq!(
+            shorten_scan_path(Path::new("/hdd2/mnt/data/somefolder1/somefolder2")),
+            "/hdd2/.../somefolder1/somefolder2/"
+        );
+        assert_eq!(
+            shorten_scan_path(Path::new("/a/b/c/d/e/f/g")),
+            "/a/.../f/g/"
+        );
     }
 
     #[test]

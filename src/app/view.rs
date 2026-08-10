@@ -239,7 +239,7 @@ pub(super) fn footer(app: &AppModel) -> Option<Element<'_, Message>> {
     } else if app.pending_branches > 0 {
         scanner::current_scan_path().map_or_else(
             || "Scanning…".to_string(),
-            |p| format!("Scanning {}", p.display()),
+            |p| format!("Scanning {}", scanner::shorten_scan_path(&p)),
         )
     } else {
         app.last_scan_time.map_or_else(
