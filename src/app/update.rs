@@ -115,10 +115,26 @@ pub(super) fn update(app: &mut AppModel, message: Message) -> Task<cosmic::Actio
                 return tasks::spawn_search_debounce(app.search_generation);
             }
         }
+        Message::SearchRegexToggled(value) => {
+            app.search_regex = value;
+            return app.rerun_search();
+        }
+        Message::SearchCaseSensitiveToggled(value) => {
+            app.search_case_sensitive = value;
+            return app.rerun_search();
+        }
+        Message::SearchWholeWordToggled(value) => {
+            app.search_whole_word = value;
+            return app.rerun_search();
+        }
         Message::SearchDebounced(generation) => {
             if generation == app.search_generation {
-                let query = app.search_query.to_lowercase();
-                return tasks::spawn_search(app.search_index.clone(), query, generation);
+                return tasks::spawn_search(
+                    app.search_index.clone(),
+                    app.search_query.clone(),
+                    app.search_options(),
+                    generation,
+                );
             }
         }
         Message::SearchResultsReady(generation, results) => {

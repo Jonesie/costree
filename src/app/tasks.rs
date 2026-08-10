@@ -35,16 +35,26 @@ pub(super) fn spawn_search_debounce(generation: u64) -> Task<cosmic::Action<Mess
 /// `search_index()` is fast, but "fast" still isn't "free" on a huge index,
 /// and running it inline in `update()` was blocking rendering (including
 /// the "Searching…" indicator itself) long enough to look like a freeze.
+/// Compiling `query`/`options` into a `Regex` happens once here per search
+/// rather than once per index entry. An invalid regex (typically the user
+/// mid-way through typing a pattern in regex mode) yields no matches rather
+/// than erroring — a stale "no results" is much less disruptive than an
+/// error popping in and out on every keystroke.
 pub(super) fn spawn_search(
     index: Arc<scanner::SearchIndex>,
     query: String,
+    options: scanner::SearchOptions,
     generation: u64,
 ) -> Task<cosmic::Action<Message>> {
     Task::perform(
         async move {
-            let results = tokio::task::spawn_blocking(move || scanner::search_index(&index, &query))
-                .await
-                .expect("search task panicked");
+            let results = tokio::task::spawn_blocking(move || {
+                scanner::compile_search_regex(&query, options)
+                    .map(|pattern| scanner::search_index(&index, &pattern))
+                    .unwrap_or_default()
+            })
+            .await
+            .expect("search task panicked");
             (generation, results)
         },
         |(generation, results)| cosmic::Action::App(Message::SearchResultsReady(generation, results)),

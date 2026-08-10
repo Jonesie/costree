@@ -32,10 +32,16 @@ pub struct AppModel {
     total_branches: usize,
     hide_dotfiles: bool,
     search_query: String,
-    /// Flat, pre-lowercased index built incrementally as branches finish
-    /// scanning, so search doesn't have to walk the nested tree itself.
-    /// Arc'd so handing a snapshot to the background search task is an O(1)
-    /// refcount bump instead of a full clone of a potentially huge Vec.
+    /// Interpret `search_query` as a regex instead of a literal substring.
+    search_regex: bool,
+    /// Match case exactly instead of the default case-insensitive search.
+    search_case_sensitive: bool,
+    /// Match on word boundaries only, not substrings.
+    search_whole_word: bool,
+    /// Flat index built incrementally as branches finish scanning, so
+    /// search doesn't have to walk the nested tree itself. Arc'd so handing
+    /// a snapshot to the background search task is an O(1) refcount bump
+    /// instead of a full clone of a potentially huge Vec.
     search_index: Arc<scanner::SearchIndex>,
     /// Cached result of the last completed search. Computed only when the
     /// debounced search actually runs, not on every render — otherwise it
@@ -90,6 +96,9 @@ pub enum Message {
     Tick,
     HideDotfilesToggled(bool),
     SearchChanged(String),
+    SearchRegexToggled(bool),
+    SearchCaseSensitiveToggled(bool),
+    SearchWholeWordToggled(bool),
     SearchDebounced(u64),
     SearchResultsReady(u64, HashSet<PathBuf>),
     RootInputChanged(String),
@@ -141,6 +150,35 @@ impl AppModel {
         self.last_scan_time = None;
         self.saving_index = false;
         tasks::spawn_check_saved_index(root)
+    }
+
+    fn search_options(&self) -> scanner::SearchOptions {
+        scanner::SearchOptions {
+            regex: self.search_regex,
+            case_sensitive: self.search_case_sensitive,
+            whole_word: self.search_whole_word,
+        }
+    }
+
+    /// Re-runs the current search immediately (no debounce) against the
+    /// latest toggle state — used when a regex/case/whole-word toggle
+    /// changes, since that's a discrete click rather than typing that
+    /// benefits from waiting out a pause.
+    fn rerun_search(&mut self) -> Task<cosmic::Action<Message>> {
+        self.search_generation += 1;
+        if self.search_query.is_empty() {
+            self.search_results = None;
+            self.searching = false;
+            Task::none()
+        } else {
+            self.searching = true;
+            tasks::spawn_search(
+                self.search_index.clone(),
+                self.search_query.clone(),
+                self.search_options(),
+                self.search_generation,
+            )
+        }
     }
 
     /// Cancels any scan in flight; already-scanned branches keep their data.
@@ -197,6 +235,9 @@ impl cosmic::Application for AppModel {
             total_branches: 0,
             hide_dotfiles,
             search_query: String::new(),
+            search_regex: false,
+            search_case_sensitive: false,
+            search_whole_word: false,
             search_index: Arc::new(Vec::new()),
             search_results: None,
             searching: false,

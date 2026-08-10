@@ -110,6 +110,24 @@ pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
                 .on_input(Message::SearchChanged)
                 .width(Length::FillPortion(1)),
         )
+        .push(search_toggle_button(
+            ".*",
+            "Use regular expression",
+            app.search_regex,
+            Message::SearchRegexToggled,
+        ))
+        .push(search_toggle_button(
+            "Aa",
+            "Match case",
+            app.search_case_sensitive,
+            Message::SearchCaseSensitiveToggled,
+        ))
+        .push(search_toggle_button(
+            "ab",
+            "Match whole word",
+            app.search_whole_word,
+            Message::SearchWholeWordToggled,
+        ))
         .push_maybe(app.searching.then(|| widget::text::caption("Searching…")))
         .push_maybe(app.saving_index.then(|| widget::text::caption("Saving…")))
         .align_y(Alignment::Center)
@@ -281,6 +299,21 @@ fn toolbar_button<'a>(
     on_press: Option<Message>,
 ) -> Element<'a, Message> {
     let button = widget::button::icon(widget::icon::from_name(icon_name)).on_press_maybe(on_press);
+    widget::tooltip::tooltip(button, widget::text::body(tooltip_text), widget::tooltip::Position::Bottom)
+        .into()
+}
+
+/// A compact editor-style search toggle (`.*`, `Aa`, `ab`) that highlights
+/// when active, matching the VS Code find-bar convention the issue asked
+/// for instead of a checkbox.
+fn search_toggle_button<'a>(
+    label: &'static str,
+    tooltip_text: &'a str,
+    active: bool,
+    on_toggle: fn(bool) -> Message,
+) -> Element<'a, Message> {
+    let class = if active { cosmic::theme::Button::Suggested } else { cosmic::theme::Button::Standard };
+    let button = widget::button::text(label).class(class).on_press(on_toggle(!active));
     widget::tooltip::tooltip(button, widget::text::body(tooltip_text), widget::tooltip::Position::Bottom)
         .into()
 }

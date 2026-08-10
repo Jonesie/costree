@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 
 /// Name of the folder a scanned root's saved index is stored under. Scans
@@ -303,15 +304,40 @@ fn rewrite_paths(node: &mut Entry, old_prefix: &Path, new_prefix: &Path) {
     }
 }
 
-/// A flattened, pre-lowercased `(path, name)` entry for fast searching.
-/// Built incrementally as branches finish scanning, so a search never has
-/// to walk (and re-lowercase) the nested tree itself.
+/// A flattened `(path, name)` entry for fast searching, built incrementally
+/// as branches finish scanning so a search never has to walk the nested
+/// tree itself. Names keep their original case — case sensitivity is a
+/// per-search toggle handled by the compiled `Regex`, not baked into the
+/// index.
 pub type SearchIndex = Vec<(PathBuf, String)>;
 
-/// Appends `entry` and every descendant to `index`, lowercasing each name
-/// once up front so repeated searches don't have to.
+/// Which of the search toggles (regex / case-sensitive / whole-word) are
+/// active. All three collapse into a single compiled `Regex` via
+/// [`compile_search_regex`] rather than branching the matching logic three
+/// separate ways.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SearchOptions {
+    pub regex: bool,
+    pub case_sensitive: bool,
+    pub whole_word: bool,
+}
+
+/// Compiles `query` into a `Regex` per `options`: a literal query is
+/// `regex::escape`d first so the toggles behave the same whether the user
+/// is typing plain text or a real pattern. `whole_word` wraps the result in
+/// `\b...\b` regardless of whether regex mode is on, so it composes with a
+/// user-supplied pattern the same way it does with a literal search term.
+/// Returns `Err` on invalid regex input — expected while the user is
+/// mid-way through typing a pattern, not a bug to surface loudly.
+pub fn compile_search_regex(query: &str, options: SearchOptions) -> Result<Regex, regex::Error> {
+    let pattern = if options.regex { query.to_string() } else { regex::escape(query) };
+    let pattern = if options.whole_word { format!(r"\b(?:{pattern})\b") } else { pattern };
+    RegexBuilder::new(&pattern).case_insensitive(!options.case_sensitive).build()
+}
+
+/// Appends `entry` and every descendant to `index`.
 pub fn index_subtree(entry: &Entry, index: &mut SearchIndex) {
-    index.push((entry.path.clone(), entry.name.to_lowercase()));
+    index.push((entry.path.clone(), entry.name.clone()));
     for child in &entry.children {
         index_subtree(child, index);
     }
@@ -332,18 +358,18 @@ pub fn reindex_prefix(index: &mut SearchIndex, old_prefix: &Path, new_prefix: &P
     }
 }
 
-/// Returns the paths of every indexed entry whose name matches `query`
-/// (expected already lowercased), plus every ancestor of a match — i.e.
-/// exactly the set of entries a search-filtered tree view should keep.
+/// Returns the paths of every indexed entry whose name matches `pattern`,
+/// plus every ancestor of a match — i.e. exactly the set of entries a
+/// search-filtered tree view should keep.
 ///
 /// Once an ancestor has been recorded by an earlier match, every path
 /// above it must already be recorded too, so walking stops as soon as it
 /// hits one — this keeps the total ancestor-walking work bounded across
 /// the whole index rather than repeating it per match.
-pub fn search_index(index: &SearchIndex, query: &str) -> HashSet<PathBuf> {
+pub fn search_index(index: &SearchIndex, pattern: &Regex) -> HashSet<PathBuf> {
     let mut matches = HashSet::new();
-    for (path, name_lower) in index {
-        if !name_lower.contains(query) {
+    for (path, name) in index {
+        if !pattern.is_match(name) {
             continue;
         }
         for ancestor in path.ancestors() {
@@ -507,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn index_subtree_flattens_and_lowercases_names() {
+    fn index_subtree_flattens_and_preserves_case() {
         let child = entry("Target.TXT", "/a/Target.TXT", 1, false, vec![]);
         let root = entry("A", "/a", 1, true, vec![child]);
 
@@ -515,8 +541,12 @@ mod tests {
         index_subtree(&root, &mut index);
 
         assert_eq!(index.len(), 2);
-        assert!(index.contains(&(PathBuf::from("/a"), "a".to_string())));
-        assert!(index.contains(&(PathBuf::from("/a/Target.TXT"), "target.txt".to_string())));
+        assert!(index.contains(&(PathBuf::from("/a"), "A".to_string())));
+        assert!(index.contains(&(PathBuf::from("/a/Target.TXT"), "Target.TXT".to_string())));
+    }
+
+    fn regex(query: &str, options: SearchOptions) -> Regex {
+        compile_search_regex(query, options).expect("valid pattern")
     }
 
     #[test]
@@ -528,7 +558,7 @@ mod tests {
 
         let mut index = SearchIndex::new();
         index_subtree(&root, &mut index);
-        let matches = search_index(&index, "target");
+        let matches = search_index(&index, &regex("target", SearchOptions::default()));
 
         assert!(matches.contains(Path::new("/a/b/target.txt")));
         assert!(matches.contains(Path::new("/a/b"))); // ancestor of a match
@@ -544,7 +574,73 @@ mod tests {
         let mut index = SearchIndex::new();
         index_subtree(&root, &mut index);
 
-        assert!(search_index(&index, "nope").is_empty());
+        assert!(search_index(&index, &regex("nope", SearchOptions::default())).is_empty());
+    }
+
+    #[test]
+    fn search_is_case_insensitive_by_default_and_case_sensitive_when_toggled() {
+        let child = entry("Target.txt", "/a/Target.txt", 1, false, vec![]);
+        let root = entry("a", "/a", 1, true, vec![child]);
+
+        let mut index = SearchIndex::new();
+        index_subtree(&root, &mut index);
+
+        assert!(search_index(&index, &regex("target", SearchOptions::default()))
+            .contains(Path::new("/a/Target.txt")));
+
+        let case_sensitive = SearchOptions { case_sensitive: true, ..Default::default() };
+        assert!(!search_index(&index, &regex("target", case_sensitive))
+            .contains(Path::new("/a/Target.txt")));
+        assert!(search_index(&index, &regex("Target", case_sensitive))
+            .contains(Path::new("/a/Target.txt")));
+    }
+
+    #[test]
+    fn whole_word_option_rejects_substring_matches() {
+        let child = entry("target.txt", "/a/target.txt", 1, false, vec![]);
+        let root = entry("a", "/a", 1, true, vec![child]);
+
+        let mut index = SearchIndex::new();
+        index_subtree(&root, &mut index);
+
+        let whole_word = SearchOptions { whole_word: true, ..Default::default() };
+        assert!(search_index(&index, &regex("target", whole_word)).contains(Path::new("/a/target.txt")));
+        assert!(search_index(&index, &regex("targe", whole_word)).is_empty());
+    }
+
+    #[test]
+    fn literal_query_with_regex_metacharacters_is_escaped_when_regex_mode_is_off() {
+        let child = entry("a.b", "/a.b", 1, false, vec![]);
+        let other = entry("axb", "/axb", 1, false, vec![]);
+        let root = entry("", "/", 0, true, vec![child, other]);
+
+        let mut index = SearchIndex::new();
+        index_subtree(&root, &mut index);
+
+        let matches = search_index(&index, &regex("a.b", SearchOptions::default()));
+        assert!(matches.contains(Path::new("/a.b")));
+        assert!(!matches.contains(Path::new("/axb")));
+    }
+
+    #[test]
+    fn regex_mode_interprets_metacharacters() {
+        let child = entry("a.b", "/a.b", 1, false, vec![]);
+        let other = entry("axb", "/axb", 1, false, vec![]);
+        let root = entry("", "/", 0, true, vec![child, other]);
+
+        let mut index = SearchIndex::new();
+        index_subtree(&root, &mut index);
+
+        let regex_on = SearchOptions { regex: true, ..Default::default() };
+        let matches = search_index(&index, &regex("a.b", regex_on));
+        assert!(matches.contains(Path::new("/a.b")));
+        assert!(matches.contains(Path::new("/axb")));
+    }
+
+    #[test]
+    fn invalid_regex_fails_to_compile_instead_of_panicking() {
+        let regex_on = SearchOptions { regex: true, ..Default::default() };
+        assert!(compile_search_regex("(unclosed", regex_on).is_err());
     }
 
     #[test]
