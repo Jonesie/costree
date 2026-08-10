@@ -398,7 +398,13 @@ fn render_entry<'a>(
     window_id: Option<cosmic::iced::window::Id>,
     rows: &mut Vec<Element<'a, Message>>,
 ) {
-    if hide_dotfiles && depth > 0 && entry.name.starts_with('.') {
+    // Hide dotfiles is skipped while actively searching: a search result
+    // that happens to live under a dotfile (e.g. matching "aws" inside
+    // ~/.aws) would otherwise get silently dropped here before the
+    // search-match check below ever runs — search_index() still finds and
+    // counts it, but nothing renders, which looks like a bug rather than
+    // an interaction between two independent filters.
+    if hide_dotfiles && search_matches.is_none() && depth > 0 && entry.name.starts_with('.') {
         return;
     }
 
@@ -497,5 +503,37 @@ fn render_entry<'a>(
                 rows,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scanner::SearchOptions;
+
+    fn entry(name: &str, path: &str, is_dir: bool, children: Vec<Entry>) -> Entry {
+        Entry { name: name.to_string(), path: PathBuf::from(path), size: 0, is_dir, scanned: true, children }
+    }
+
+    /// Regression test for a real bug report: searching "aws" found a match
+    /// inside `~/.aws`, but with "Hide dotfiles" on, nothing showed up in
+    /// the list — the dotfile filter was dropping the matched entry before
+    /// the search-match check ever ran, even though `search_index()`
+    /// correctly counted it.
+    #[test]
+    fn search_match_inside_a_dotfile_renders_even_with_hide_dotfiles_on() {
+        let credentials = entry("credentials", "/home/.aws/credentials", false, vec![]);
+        let aws_dir = entry(".aws", "/home/.aws", true, vec![credentials]);
+        let root = entry("home", "/home", true, vec![aws_dir]);
+
+        let mut search_index = scanner::SearchIndex::new();
+        scanner::index_subtree(&root, &mut search_index);
+        let pattern = scanner::compile_search_regex("aws", SearchOptions::default()).unwrap();
+        let matches = scanner::search_index(&search_index, &pattern, scanner::MAX_SEARCH_RESULTS);
+
+        let mut rows = Vec::new();
+        render_entry(&root, 0, &HashSet::new(), &None, true, Some(&matches), None, &mut rows);
+
+        assert_eq!(rows.len(), 2, "expected the root ancestor row and the .aws match row");
     }
 }
