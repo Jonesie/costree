@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SPDX-License-Identifier: MIT -->
 <component type="desktop-application">
-  <id>net.jonesie.Costree</id>
+  <id>nz.net.jonesie.Costree</id>
   <name>CosTree</name>
   <summary>Graphical disk usage analyzer for the COSMIC desktop</summary>
   <metadata_license>CC0-1.0</metadata_license>
@@ -24,7 +24,7 @@
     </ul>
   </description>
 
-  <launchable type="desktop-id">net.jonesie.Costree.desktop</launchable>
+  <launchable type="desktop-id">nz.net.jonesie.Costree.desktop</launchable>
 
   <screenshots>
     <screenshot type="default">

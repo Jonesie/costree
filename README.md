@@ -1,6 +1,6 @@
 # CosTree
 
-<img src="packaging/icons/net.jonesie.Costree.svg" alt="" width="64" height="64" align="left">
+<img src="packaging/icons/nz.net.jonesie.Costree.svg" alt="" width="64" height="64" align="left">
 
 A graphical disk usage analyzer for the [COSMIC desktop](https://github.com/pop-os/cosmic-epoch), built with [libcosmic](https://github.com/pop-os/libcosmic) (the same Rust/iced-based toolkit used by System76's own COSMIC apps).
 
