@@ -33,7 +33,7 @@ fn listing_message(app: &AppModel) -> String {
 /// The app icon, embedded so the faint window watermark below works from an
 /// installed `.deb` too — a relative path to `packaging/` would only
 /// resolve when run from inside the source tree.
-const APP_ICON_SVG: &[u8] = include_bytes!("../../packaging/icons/net.jonesie.Costree.svg");
+const APP_ICON_SVG: &[u8] = include_bytes!("../../packaging/icons/nz.net.jonesie.Costree.svg");
 
 pub(super) fn view(app: &AppModel) -> Element<'_, Message> {
     let spacing = cosmic::theme::spacing();
