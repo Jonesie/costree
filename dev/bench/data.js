@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786392384231,
+  "lastUpdate": 1786432682925,
   "repoUrl": "https://github.com/Jonesie/costree",
   "entries": {
     "Benchmark": [
@@ -215,6 +215,54 @@ window.BENCHMARK_DATA = {
             "name": "search_broad_500k_capped",
             "value": 18275645,
             "range": "± 445051",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "peter@jonesie.net.nz",
+            "name": "Peter G Jones",
+            "username": "Jonesie"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "21db7339fd370b163c12ff5889cb2132daeb05c4",
+          "message": "Merge pull request #20 from Jonesie/flatpak-packaging\n\nAppStream metadata + Flatpak manifest (issue #16, steps 1-2)",
+          "timestamp": "2026-08-11T19:14:49+12:00",
+          "tree_id": "ae62f42580c91c6c2d51623513d9c0e752c62046",
+          "url": "https://github.com/Jonesie/costree/commit/21db7339fd370b163c12ff5889cb2132daeb05c4"
+        },
+        "date": 1786432681976,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "scan_synthetic_tree",
+            "value": 1461568,
+            "range": "± 62852",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_narrow_500k",
+            "value": 19240962,
+            "range": "± 1116488",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_broad_500k_uncapped",
+            "value": 333206062,
+            "range": "± 13888153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_broad_500k_capped",
+            "value": 19259035,
+            "range": "± 174898",
             "unit": "ns/iter"
           }
         ]
