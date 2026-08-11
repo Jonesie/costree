@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<component type="desktop-application">
+  <id>net.jonesie.Costree</id>
+  <name>CosTree</name>
+  <summary>Graphical disk usage analyzer for the COSMIC desktop</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="net.jonesie">
+    <name>Jonesie</name>
+  </developer>
+
+  <description>
+    <p>
+      CosTree scans a directory tree and shows file and folder sizes, built
+      with libcosmic for the COSMIC desktop.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Incremental scanning, so results for the top level appear immediately</li>
+      <li>Search and filter across the whole tree, with regex support</li>
+      <li>File operations: open, rename, delete</li>
+      <li>Save and reload a scan's index without rescanning</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">net.jonesie.Costree.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/Jonesie/costree/main/screenshots/main-window.png</image>
+      <caption>CosTree showing a scanned directory tree</caption>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://github.com/Jonesie/costree</url>
+  <url type="bugtracker">https://github.com/Jonesie/costree/issues</url>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1.0" date="2026-08-11" />
+  </releases>
+
+  <provides>
+    <binary>costree</binary>
+  </provides>
+</component>
