@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786432682925,
+  "lastUpdate": 1786433675871,
   "repoUrl": "https://github.com/Jonesie/costree",
   "entries": {
     "Benchmark": [
@@ -263,6 +263,54 @@ window.BENCHMARK_DATA = {
             "name": "search_broad_500k_capped",
             "value": 19259035,
             "range": "± 174898",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "peter@jonesie.net.nz",
+            "name": "Peter G Jones",
+            "username": "Jonesie"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3492c956d39d95b269eda4267f96faac10d2eae4",
+          "message": "Merge pull request #22 from Jonesie/rename-app-id\n\nRename app ID: net.jonesie.Costree -> nz.net.jonesie.Costree",
+          "timestamp": "2026-08-11T19:31:39+12:00",
+          "tree_id": "2db741f2ad1cde26350f027acdde3bf2023c8071",
+          "url": "https://github.com/Jonesie/costree/commit/3492c956d39d95b269eda4267f96faac10d2eae4"
+        },
+        "date": 1786433675123,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "scan_synthetic_tree",
+            "value": 1010388,
+            "range": "± 27162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_narrow_500k",
+            "value": 25495199,
+            "range": "± 115698",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_broad_500k_uncapped",
+            "value": 349601370,
+            "range": "± 8798189",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "search_broad_500k_capped",
+            "value": 25878107,
+            "range": "± 207440",
             "unit": "ns/iter"
           }
         ]
