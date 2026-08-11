@@ -206,16 +206,29 @@ pub(super) fn spawn_folder_picker(current: PathBuf) -> Task<cosmic::Action<Messa
     })
 }
 
+/// Spawns `cmd path`, routing it through `flatpak-spawn --host` when running
+/// inside a Flatpak sandbox — a sandboxed process can't otherwise resolve a
+/// host binary like `cosmic-files` or `xdg-open` by name. `FLATPAK_ID` is
+/// set by the Flatpak runtime for every sandboxed process, so its presence
+/// is a reliable (and the standard) way to detect this at runtime.
+fn spawn_maybe_sandboxed(cmd: &str, path: &Path) -> std::io::Result<std::process::Child> {
+    if std::env::var_os("FLATPAK_ID").is_some() {
+        std::process::Command::new("flatpak-spawn").arg("--host").arg(cmd).arg(path).spawn()
+    } else {
+        std::process::Command::new(cmd).arg(path).spawn()
+    }
+}
+
 /// For a directory, launches COSMIC Files on it. cosmic-files has no CLI
 /// support for selecting a specific file within its parent folder, so for a
 /// file this instead opens it directly with its default application (via
 /// `xdg-open`, same mechanism a double-click in a file manager would use).
 pub(super) fn open_in_files(path: &Path) {
     if path.is_dir() {
-        if let Err(err) = std::process::Command::new("cosmic-files").arg(path).spawn() {
+        if let Err(err) = spawn_maybe_sandboxed("cosmic-files", path) {
             eprintln!("failed to launch cosmic-files: {err}");
         }
-    } else if let Err(err) = std::process::Command::new("xdg-open").arg(path).spawn() {
+    } else if let Err(err) = spawn_maybe_sandboxed("xdg-open", path) {
         eprintln!("failed to open {}: {err}", path.display());
     }
 }
