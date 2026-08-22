@@ -79,6 +79,18 @@ fn is_index_dir(path: &Path) -> bool {
     path.file_name().is_some_and(|name| name == INDEX_DIR_NAME)
 }
 
+/// True if `path` is a symlink whose target is a directory. These are
+/// excluded from scan results entirely rather than being followed (which
+/// risks infinite recursion on a symlink cycle and double-counts a directory
+/// scanned elsewhere in the tree) or listed as a file (which previously
+/// happened by accident: `symlink_metadata` never reports a symlink as a
+/// directory, so it fell through to the file branch and was sized as the
+/// byte length of the link target rather than skipped).
+fn is_dir_symlink(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_symlink())
+        && path.metadata().is_ok_and(|metadata| metadata.is_dir())
+}
+
 /// Lists only the immediate children of `path`. Files are fully resolved
 /// (their size is cheap to read), but directories are returned unscanned
 /// with size 0 so the caller can render them immediately and scan their
@@ -88,7 +100,7 @@ pub fn list_top_level(path: &Path) -> Entry {
         .map(|read_dir| {
             read_dir
                 .flatten()
-                .filter(|dir_entry| !is_index_dir(&dir_entry.path()))
+                .filter(|dir_entry| !is_index_dir(&dir_entry.path()) && !is_dir_symlink(&dir_entry.path()))
                 .map(|dir_entry| {
                     let child_path = dir_entry.path();
                     let metadata = fs::symlink_metadata(&child_path);
@@ -134,7 +146,8 @@ pub fn list_top_level(path: &Path) -> Entry {
 
 /// Recursively scans `path`, computing the size of every file and the
 /// cumulative size of every directory. Unreadable entries (permission
-/// denied, broken symlinks, etc.) are skipped rather than aborting the scan.
+/// denied, broken symlinks, etc.) are skipped rather than aborting the scan,
+/// as are symlinks to directories (see `is_dir_symlink`).
 ///
 /// Checks `generation` against the live scan generation before descending
 /// into each directory, returning `None` as soon as it's stale (i.e. the
@@ -178,7 +191,7 @@ pub fn scan(path: &Path, generation: u64) -> Option<Entry> {
             let child_paths: Vec<PathBuf> = read_dir
                 .flatten()
                 .map(|dir_entry| dir_entry.path())
-                .filter(|child_path| !is_index_dir(child_path))
+                .filter(|child_path| !is_index_dir(child_path) && !is_dir_symlink(child_path))
                 .collect();
             child_paths
                 .par_iter()
@@ -952,5 +965,60 @@ mod tests {
 
         assert_eq!(listed.children.len(), 1);
         assert_eq!(listed.children[0].name, "file.txt");
+    }
+
+    #[test]
+    fn scan_skips_directory_symlinks() {
+        let _guard = GENERATION_TEST_LOCK.lock().unwrap();
+
+        let dir = tempfile::tempdir().expect("create temp dir");
+        fs::write(dir.path().join("file.txt"), b"hi").expect("write file");
+        let target = dir.path().join("target");
+        fs::create_dir(&target).expect("create target dir");
+        fs::write(target.join("inside.txt"), b"hidden").expect("write file");
+        std::os::unix::fs::symlink(&target, dir.path().join("link_to_target"))
+            .expect("create symlink");
+
+        let generation = next_generation();
+        let scanned = scan(dir.path(), generation).expect("scan should not be cancelled");
+
+        assert_eq!(scanned.children.len(), 2);
+        assert!(scanned.children.iter().any(|c| c.name == "file.txt"));
+        assert!(scanned.children.iter().any(|c| c.name == "target"));
+        assert!(!scanned.children.iter().any(|c| c.name == "link_to_target"));
+    }
+
+    #[test]
+    fn list_top_level_skips_directory_symlinks() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        fs::write(dir.path().join("file.txt"), b"hi").expect("write file");
+        let target = dir.path().join("target");
+        fs::create_dir(&target).expect("create target dir");
+        std::os::unix::fs::symlink(&target, dir.path().join("link_to_target"))
+            .expect("create symlink");
+
+        let listed = list_top_level(dir.path());
+
+        assert_eq!(listed.children.len(), 2);
+        assert!(listed.children.iter().any(|c| c.name == "file.txt"));
+        assert!(listed.children.iter().any(|c| c.name == "target"));
+        assert!(!listed.children.iter().any(|c| c.name == "link_to_target"));
+    }
+
+    #[test]
+    fn scan_still_follows_a_regular_file_symlink() {
+        let _guard = GENERATION_TEST_LOCK.lock().unwrap();
+
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let target_file = dir.path().join("real.txt");
+        fs::write(&target_file, b"12345").expect("write file");
+        std::os::unix::fs::symlink(&target_file, dir.path().join("link.txt"))
+            .expect("create symlink");
+
+        let generation = next_generation();
+        let scanned = scan(dir.path(), generation).expect("scan should not be cancelled");
+
+        assert_eq!(scanned.children.len(), 2);
+        assert!(scanned.children.iter().any(|c| c.name == "link.txt" && !c.is_dir));
     }
 }
